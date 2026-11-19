@@ -1,12 +1,21 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { Reading, Tokens } from '../types'
+import type { Fields, Reading, Tokens } from '../types'
 import { costOf, hasRates, parsePricing, ratesFor } from './pricing'
 import type { Pricing } from './pricing'
 import { isNewer, pluginJsonUrl, repoOf } from './versions'
 
 const NO_TOKENS: Tokens = { input: 0, cached: 0, output: 0 }
+
+const ALL_FIELDS: Fields = {
+  ttft: true,
+  tps: true,
+  tokens: true,
+  cache: true,
+  turn: true,
+  session: true,
+}
 
 const EMPTY: Reading = {
   ttftMs: null,
@@ -18,13 +27,15 @@ const EMPTY: Reading = {
   pricedBy: 'ledger',
   customUsd: 0,
   updateVersion: null,
+  fields: ALL_FIELDS,
+  isMenuOpen: false,
 }
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-4' },
+  { shape: 'reading-5' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -673,50 +684,103 @@ export const register: Register = on => {
       ? <Button key="update" label={`update ${row.updateVersion}`} onPress={runUpdate} />
       : <Text> </Text>
 
-    // The Texts sit straight in the Box, the Button last, as the band's own
-    // examples draw: a fragment or a wrapper Box is laid out as a column on
-    // the desktop surface, so each child is a sibling here.
-    if (e.props.bodyColumns >= WIDE_COLUMNS) {
-      return (
-        <Box>
-          <Text dimColor>TTFT </Text>
-          <Text color="claude">{ttft}</Text>
-          <Text dimColor>  TPS </Text>
-          <Text color="claude">{tps}</Text>
-          <Text dimColor>  tokens </Text>
-          <Text color="claude">{tokens}</Text>
-          <Text dimColor>  cache </Text>
-          <Text color="suggestion">{cache}</Text>
-          <Text dimColor>  turn </Text>
-          <Text color="warning">{turn}</Text>
-          <Text dimColor>  session </Text>
-          <Text color="success">{session}</Text>
-          <Text>  </Text>
-          {action}
-        </Box>
-      )
+    // The menu on the left turns each reading on or off. A hidden reading
+    // draws an empty Text, so the row's shape never changes.
+    const f = row.fields
+
+    const toggleMenu = (): void => {
+      void update($, reading, row => ({ ...row, isMenuOpen: !row.isMenuOpen }))
     }
 
-    return (
+    const toggleField = (name: keyof Fields): void => {
+      void update($, reading, row => {
+        const fields: Fields = { ...row.fields }
+        fields[name] = !fields[name]
+
+        return { ...row, fields }
+      })
+    }
+
+    const menu = (
+      <Box gap="xs" paddingX={1}>
+        <Button key="f-ttft" label={`${f.ttft ? '✓' : '·'} ttft`} onPress={() => toggleField('ttft')} />
+        <Button key="f-tps" label={`${f.tps ? '✓' : '·'} tps`} onPress={() => toggleField('tps')} />
+        <Button key="f-tokens" label={`${f.tokens ? '✓' : '·'} tokens`} onPress={() => toggleField('tokens')} />
+        <Button key="f-cache" label={`${f.cache ? '✓' : '·'} cache`} onPress={() => toggleField('cache')} />
+        <Button key="f-turn" label={`${f.turn ? '✓' : '·'} turn`} onPress={() => toggleField('turn')} />
+        <Button key="f-session" label={`${f.session ? '✓' : '·'} session`} onPress={() => toggleField('session')} />
+      </Box>
+    )
+
+    // The Texts sit straight in a Box, as the band's own examples draw: a
+    // fragment or a wrapper Box is laid out as a column on the desktop
+    // surface, so each child is a sibling here.
+    const line = (
+      <Box paddingX={1}>
+        <Button key="more" label="☰" dimColor onPress={toggleMenu} />
+        <Text>  </Text>
+        <Text dimColor>{f.ttft ? 'TTFT ' : ''}</Text>
+        <Text color="claude">{f.ttft ? ttft : ''}</Text>
+        <Text dimColor>{f.tps ? '   TPS ' : ''}</Text>
+        <Text color="claude">{f.tps ? tps : ''}</Text>
+        <Text dimColor>{f.tokens ? '   tokens ' : ''}</Text>
+        <Text color="claude">{f.tokens ? tokens : ''}</Text>
+        <Text dimColor>{f.cache ? '   cache ' : ''}</Text>
+        <Text color="suggestion">{f.cache ? cache : ''}</Text>
+        <Text dimColor>{f.turn ? '   turn ' : ''}</Text>
+        <Text color="warning">{f.turn ? turn : ''}</Text>
+        <Text dimColor>{f.session ? '   session ' : ''}</Text>
+        <Text color="success">{f.session ? session : ''}</Text>
+        <Text>  </Text>
+        {action}
+      </Box>
+    )
+
+    if (e.props.bodyColumns >= WIDE_COLUMNS) {
+      return row.isMenuOpen ? (
+        <Box flexDirection="column" gap="sm">
+          {line}
+          {menu}
+        </Box>
+      ) : line
+    }
+
+    const first = (
+      <Box paddingX={1}>
+        <Button key="more" label="☰" dimColor onPress={toggleMenu} />
+        <Text>  </Text>
+        <Text dimColor>{f.ttft ? 'TTFT ' : ''}</Text>
+        <Text color="claude">{f.ttft ? ttft : ''}</Text>
+        <Text dimColor>{f.tps ? '   TPS ' : ''}</Text>
+        <Text color="claude">{f.tps ? tps : ''}</Text>
+        <Text dimColor>{f.tokens ? '   tokens ' : ''}</Text>
+        <Text color="claude">{f.tokens ? tokens : ''}</Text>
+        <Text dimColor>{f.cache ? '   cache ' : ''}</Text>
+        <Text color="suggestion">{f.cache ? cache : ''}</Text>
+      </Box>
+    )
+
+    const second = (
+      <Box paddingX={1}>
+        <Text dimColor>{f.turn ? 'turn ' : ''}</Text>
+        <Text color="warning">{f.turn ? turn : ''}</Text>
+        <Text dimColor>{f.session ? '   session ' : ''}</Text>
+        <Text color="success">{f.session ? session : ''}</Text>
+        <Text>  </Text>
+        {action}
+      </Box>
+    )
+
+    return row.isMenuOpen ? (
+      <Box flexDirection="column" gap="sm">
+        {first}
+        {second}
+        {menu}
+      </Box>
+    ) : (
       <Box flexDirection="column">
-        <Box>
-          <Text dimColor>TTFT </Text>
-          <Text color="claude">{ttft}</Text>
-          <Text dimColor>  TPS </Text>
-          <Text color="claude">{tps}</Text>
-          <Text dimColor>  tokens </Text>
-          <Text color="claude">{tokens}</Text>
-          <Text dimColor>  cache </Text>
-          <Text color="suggestion">{cache}</Text>
-        </Box>
-        <Box>
-          <Text dimColor>turn </Text>
-          <Text color="warning">{turn}</Text>
-          <Text dimColor>  session </Text>
-          <Text color="success">{session}</Text>
-          <Text>  </Text>
-          {action}
-        </Box>
+        {first}
+        {second}
       </Box>
     )
   })

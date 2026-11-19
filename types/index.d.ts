@@ -29,6 +29,20 @@ export type Reading = {
    * null when the installed copy is the one on disk.
    */
   updateVersion: string | null
+  /** Which of the six readings the row draws. */
+  fields: Fields
+  /** True while the menu of readings is open under the row. */
+  isMenuOpen: boolean
+}
+
+/** Which readings the row shows; the menu on the left toggles them. */
+export type Fields = {
+  ttft: boolean
+  tps: boolean
+  tokens: boolean
+  cache: boolean
+  turn: boolean
+  session: boolean
 }
 
 /**

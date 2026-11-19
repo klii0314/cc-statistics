@@ -24,12 +24,14 @@ const READING = {
   pricedBy: 'ledger',
   customUsd: 0,
   updateVersion: '0.5.3',
+  fields: { ttft: true, tps: true, tokens: true, cache: true, turn: true, session: true },
+  isMenuOpen: false,
 }
 
 test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async ($, on) => {
   // What the mod's atom reads: the stored value and the version it stands at.
   on('state.get', () => ({
-    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
   }))
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
@@ -49,7 +51,7 @@ test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async 
 
 test('the stats are Text siblings in one Box, not a column', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
   }))
 
   // A fragment in the tree is laid out as a column on the desktop surface, so
@@ -60,9 +62,9 @@ test('the stats are Text siblings in one Box, not a column', async ($, on) => {
   expect(tree.type).toBe('Box')
 
   const children = tree.type === 'Box' ? tree.children ?? [] : []
-  expect(children).toHaveLength(14)
+  expect(children).toHaveLength(16)
 
-  for (const child of children.slice(0, 13)) {
+  for (const child of children.slice(1, 15)) {
     expect(typeof child === 'string' || child.type === 'Text').toBe(true)
   }
   await ui.unmount()
@@ -70,7 +72,7 @@ test('the stats are Text siblings in one Box, not a column', async ($, on) => {
 
 test('a narrow band moves the costs to a second line', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
   }))
 
   const ui = await $.ui.mount({
@@ -88,7 +90,7 @@ test('costs priced from the plugin rates carry a star', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-4',
+        shape: 'reading-5',
         value: { ...READING, pricedBy: 'custom', customUsd: 0.0042 },
       },
       version: 1,
@@ -106,7 +108,7 @@ test('tokens keep two decimals', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-4',
+        shape: 'reading-5',
         value: {
           ...READING,
           tokens: { input: 52_000_000, cached: 51_900_000, output: 110_000 },
@@ -129,10 +131,31 @@ test('before anything is measured the row shows dashes', async $ => {
   await ui.unmount()
 })
 
+test('a field turned off draws nothing of itself', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: {
+        shape: 'reading-5',
+        value: {
+          ...READING,
+          fields: { ...READING.fields, ttft: false },
+        },
+      },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(await ui.find({ type: 'Text', text: /TTFT/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /TPS/ }))?.text).toBe('   TPS ')
+  await ui.unmount()
+})
+
 test('no newer version means no update button', async ($, on) => {
   on('state.get', () => ({
     value: {
-      value: { shape: 'reading-4', value: { ...READING, updateVersion: null } },
+      value: { shape: 'reading-5', value: { ...READING, updateVersion: null } },
       version: 1,
     },
   }))

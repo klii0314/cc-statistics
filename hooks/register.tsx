@@ -2,20 +2,12 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
 import type { Fields, Reading, Tokens } from '../types'
+import { ALL_FIELDS, readFields, sameFields } from './fields'
 import { costOf, hasRates, parsePricing, ratesFor } from './pricing'
 import type { Pricing } from './pricing'
 import { isNewer, pluginJsonUrl, repoOf } from './versions'
 
 const NO_TOKENS: Tokens = { input: 0, cached: 0, output: 0 }
-
-const ALL_FIELDS: Fields = {
-  ttft: true,
-  tps: true,
-  tokens: true,
-  cache: true,
-  turn: true,
-  session: true,
-}
 
 const EMPTY: Reading = {
   ttftMs: null,
@@ -335,6 +327,28 @@ async function restoreReading($: EngineInterface): Promise<void> {
   }
 }
 
+// ---- the selection every session shares ----------------------------------
+// The six switches are one setting, not one per session: a toggle writes it to
+// `$.store`, and every session reads it back at its start and on a timer.
+const FIELDS_KEY = 'fields'
+const FIELD_SYNC_MS = 3000
+
+async function savedFields($: EngineInterface): Promise<Fields | null> {
+  try {
+    return readFields(await $.store.get(FIELDS_KEY))
+  } catch {
+    return null
+  }
+}
+
+async function saveFields($: EngineInterface, fields: Fields): Promise<void> {
+  try {
+    await $.store.set(FIELDS_KEY, fields)
+  } catch {
+    // A refused write leaves the other sessions as they were.
+  }
+}
+
 export const register: Register = on => {
   // The session's total when the main loop's current turn began; the module's
   // own, so a reload starts the turn's cost afresh.
@@ -366,6 +380,21 @@ export const register: Register = on => {
       ...row,
       sessionUsd: usage.cost?.usd ?? row.sessionUsd,
     }))
+    // Follow the selection another session saved, then keep following it.
+    const shared = await savedFields($)
+
+    if (shared !== null && !sameFields(shared, (await read($, reading)).fields)) {
+      await update($, reading, row => ({ ...row, fields: shared }))
+    }
+
+    $.clock.every(FIELD_SYNC_MS, async () => {
+      const saved = await savedFields($)
+
+      if (saved !== null) {
+        await update($, reading, row => (sameFields(row.fields, saved) ? row : { ...row, fields: saved }))
+      }
+    })
+
     // Ask behind the turn, not inside it: the answer lands in the row.
     void checkUpdate($)
 
@@ -692,13 +721,15 @@ export const register: Register = on => {
       void update($, reading, row => ({ ...row, isMenuOpen: !row.isMenuOpen }))
     }
 
-    const toggleField = (name: keyof Fields): void => {
-      void update($, reading, row => {
+    const toggleField = async (name: keyof Fields): Promise<void> => {
+      const written = await update($, reading, row => {
         const fields: Fields = { ...row.fields }
         fields[name] = !fields[name]
 
         return { ...row, fields }
       })
+      // The other sessions read this key back on their own clock.
+      void saveFields($, written.fields)
     }
 
     const menu = (

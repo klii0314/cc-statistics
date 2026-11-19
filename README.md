@@ -60,20 +60,22 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 这个仓库本身就是一个 marketplace：`.claude-plugin/marketplace.json` 与
 `plugin.json` 并列，`source` 指向仓库根目录。
 
-从 GitHub 安装（`<owner>/<repo>` 换成仓库地址，需要 Claude Code 2.1.275 或更新）：
+从 GitHub 安装（需要 Claude Code 2.1.275 或更新）：
 
 ```bash
-claude plugin install cc-statistics --marketplace <owner>/<repo>
+claude plugin install cc-statistics --marketplace klii0314/cc-statistics
 ```
 
-终端会话里也可以直接输入 `/plugin install cc-statistics --marketplace <owner>/<repo>`；
-桌面应用的 Code 标签页走 **+ → Plugins → Add marketplace**，填 `<owner>/<repo>`。
+终端会话里也可以直接输入 `/plugin install cc-statistics --marketplace klii0314/cc-statistics`；
+桌面应用的 Code 标签页走 **+ → Plugins → Add marketplace**，填 `klii0314/cc-statistics`。
 选 user 作用域后，之后再启动的每个会话都会加载。
 
-也可以把克隆下来的文件夹当作本地 marketplace 安装：
+从自己的 fork 安装时，把上面的 `klii0314/cc-statistics` 换成 `<你的账号>/cc-statistics`。
+
+也可以把克隆下来的文件夹当作本地 marketplace 安装（`./cc-statistics` 换成实际克隆路径）：
 
 ```bash
-claude plugin marketplace add <repo folder>
+claude plugin marketplace add ./cc-statistics
 claude plugin install cc-statistics@cc-statistics --scope user
 ```
 

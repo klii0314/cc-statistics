@@ -35,8 +35,9 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 ## 计费（pricing.json）
 
 默认 `turn`/`session` 读引擎的 `/cost` 账本：按模型官方价计算，缓存读/写和 1 小时缓存的差异都已处理。
-如果你的服务商不同（例如设置了 `ANTHROPIC_BASE_URL` 指向中转/代理），在插件目录
-（`claude plugin list` 里 `Read from:` 给出的那条路径）下新建 `pricing.json`，填它的费率：
+如果你的服务商不同（例如设置了 `ANTHROPIC_BASE_URL` 指向中转/代理），在插件**实际
+运行**的目录里新建 `pricing.json`——`claude plugin list --json` 的 `installPath`
+就是它；文件放进源仓库目录的话，按下面「修改与更新」走一遍让它进入副本。填费率：
 
 ```json
 {
@@ -52,7 +53,7 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 - 匹配顺序：模型 id 完全一致 → id 里包含的最长 key（如 `sonnet` 匹配 `claude-sonnet-…-20260101`）→ `fallback`。都不匹配的按 $0 记，并在日志里提示一次。
 - `multiplier` 乘在所有金额上。只写 `multiplier`、不写 `models`/`fallback` 时，按倍率折算引擎账本（`session` 仍包含安装前的历史）。
 - 按费率计算时，`session` 由插件自己累加，从插件开始观察会话时算起（正常是会话开始）。
-- 改完 `pricing.json` 下一轮就生效，不需要重载插件。
+- 改的是运行目录里那份 `pricing.json`，下一轮开始就生效，不需要重载插件。
 - `pricing.example.json` 只是结构示例，里面的数字是占位的，请换成你服务商的报价。
 
 ## 显示位置
@@ -85,9 +86,18 @@ claude plugin marketplace add ./cc-statistics
 claude plugin install cc-statistics@cc-statistics --scope user
 ```
 
-文件夹型 marketplace 直接读原目录，改完运行 `/reload-plugins` 就生效；
-从 GitHub 安装的则是安装时那份副本，需要 push 新版本后
-`claude plugin update cc-statistics` 再 `/reload-plugins`。
+## 修改与更新
+
+运行中的会话加载的是**安装时的那份副本**（`claude plugin list --json` 的
+`installPath`），不是仓库目录。改完代码之后按这个顺序做，三步都不能省：
+
+1. 把 `.claude-plugin/plugin.json` 的 `version` 加一；
+2. 更新安装副本：`claude plugin update cc-statistics`，或者点横栏行尾出现的
+   `update <版本>` 按钮；
+3. `/reload-plugins`（或重启应用），让会话加载新副本。
+
+只改文件不 bump 版本的话，`claude plugin update` 会认为「已是最新」，副本不会
+更新，reload 也就仍跑旧代码——这是最常见的「改完没生效」。
 
 ## 开发
 

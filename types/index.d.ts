@@ -24,6 +24,11 @@ export type Reading = {
   pricedBy: 'ledger' | 'custom'
   /** US dollars the plugin has priced itself this session (custom rates only). */
   customUsd: number
+  /**
+   * The newer version the band offers, when one is installed but not taken;
+   * null when the installed copy is the one on disk.
+   */
+  updateVersion: string | null
 }
 
 /**

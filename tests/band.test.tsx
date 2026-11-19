@@ -23,12 +23,13 @@ const READING = {
   tokens: { input: 1_500_000, cached: 1_326_000, output: 42_000 },
   pricedBy: 'ledger',
   customUsd: 0,
+  updateVersion: '0.5.3',
 }
 
 test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async ($, on) => {
   // What the mod's atom reads: the stored value and the version it stands at.
   on('state.get', () => ({
-    value: { value: { shape: 'reading-3', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
   }))
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
@@ -48,7 +49,7 @@ test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async 
 
 test('the stats are Text siblings in one Box, not a column', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-3', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
   }))
 
   // A fragment in the tree is laid out as a column on the desktop surface, so
@@ -69,7 +70,7 @@ test('the stats are Text siblings in one Box, not a column', async ($, on) => {
 
 test('a narrow band moves the costs to a second line', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-3', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-4', value: READING }, version: 1 },
   }))
 
   const ui = await $.ui.mount({
@@ -87,7 +88,7 @@ test('costs priced from the plugin rates carry a star', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-3',
+        shape: 'reading-4',
         value: { ...READING, pricedBy: 'custom', customUsd: 0.0042 },
       },
       version: 1,
@@ -105,6 +106,20 @@ test('before anything is measured the row shows dashes', async $ => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
   expect((await ui.find({ type: 'Text', text: /^—$/ }))?.text).toBe('—')
+  await ui.unmount()
+})
+
+test('no newer version means no update button', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: { shape: 'reading-4', value: { ...READING, updateVersion: null } },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(await ui.find({ type: 'Button', key: 'update' })).toBeUndefined()
   await ui.unmount()
 })
 

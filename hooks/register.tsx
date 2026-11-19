@@ -16,13 +16,14 @@ const EMPTY: Reading = {
   tokens: NO_TOKENS,
   pricedBy: 'ledger',
   customUsd: 0,
+  updateVersion: null,
 }
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-3' },
+  { shape: 'reading-4' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -102,6 +103,71 @@ async function loadPricing($: EngineInterface): Promise<Pricing | null> {
   }
 }
 
+// ---- the update button's check -------------------------------------------
+// The CLI knows what is installed and, for the folder a folder-install reads,
+// what version sits there: `folderVersion` newer than `version` is a version
+// waiting to be taken. The check runs behind a draw, throttled, and never per
+// piece of the stream.
+const CHECK_EVERY_MS = 5 * 60_000
+let lastCheckAt = 0
+let isChecking = false
+
+async function newerVersion($: EngineInterface): Promise<string | null> {
+  const result = await $.process.run(
+    ['claude', 'plugin', 'list', '--json'],
+    { timeoutMs: 30_000 },
+  )
+
+  if (result.exitCode !== 0) {
+    return null
+  }
+
+  const rows: unknown = JSON.parse(result.stdout)
+
+  if (!Array.isArray(rows)) {
+    return null
+  }
+
+  const prefix = `${$.plugin.name}@`
+
+  for (const raw of rows) {
+    if (raw === null || typeof raw !== 'object') {
+      continue
+    }
+
+    const row = raw as { id?: unknown; version?: unknown; folderVersion?: unknown }
+
+    if (typeof row.id !== 'string' || !row.id.startsWith(prefix)) {
+      continue
+    }
+
+    const installed = typeof row.version === 'string' ? row.version : null
+    const onDisk = typeof row.folderVersion === 'string' ? row.folderVersion : null
+
+    return installed !== null && onDisk !== null && onDisk !== installed ? onDisk : null
+  }
+
+  return null
+}
+
+async function checkUpdate($: EngineInterface): Promise<void> {
+  if (isChecking || Date.now() - lastCheckAt < CHECK_EVERY_MS) {
+    return
+  }
+
+  isChecking = true
+  lastCheckAt = Date.now()
+
+  try {
+    const latest = await newerVersion($)
+    await update($, reading, row => (row.updateVersion === latest ? row : { ...row, updateVersion: latest }))
+  } catch {
+    // A check that cannot run leaves the last answer.
+  } finally {
+    isChecking = false
+  }
+}
+
 export const register: Register = on => {
   // The session's total when the main loop's current turn began; the module's
   // own, so a reload starts the turn's cost afresh.
@@ -126,6 +192,8 @@ export const register: Register = on => {
     const usage = await $.session.usage()
     turnStartUsd = usage.cost?.usd ?? null
     await update($, reading, () => ({ ...EMPTY, sessionUsd: turnStartUsd }))
+    // Ask behind the turn, not inside it: the answer lands in the row.
+    void checkUpdate($)
 
     return result
   })
@@ -150,6 +218,8 @@ export const register: Register = on => {
       return result
     }
 
+    // Throttled: at most one CLI call every few minutes, never per draw.
+    void checkUpdate($)
     pricing = await loadPricing($)
     const active = pricing
 
@@ -386,7 +456,7 @@ export const register: Register = on => {
     // The band's one action: pull the installed plugin's next version, then
     // say how it lands. A folder install reads its folder, so this is mostly
     // a no-op there; a marketplace install fetches the new copy.
-    const update = async (): Promise<void> => {
+    const runUpdate = async (): Promise<void> => {
       try {
         const result = await $.process.run(
           ['claude', 'plugin', 'update', $.plugin.name],
@@ -401,10 +471,20 @@ export const register: Register = on => {
         $.ui.toast(result.exitCode === 0
           ? `${line ?? '已更新'}；运行 /reload-plugins 生效`
           : `更新失败：${line ?? `exit ${result.exitCode}`}`)
+
+        if (result.exitCode === 0) {
+          await update($, reading, row => ({ ...row, updateVersion: null }))
+        }
       } catch (error) {
         $.ui.toast(`无法运行 claude：${error instanceof Error ? error.message : String(error)}`)
       }
     }
+
+    // No newer version, no button: the slot keeps a blank Text so the tree's
+    // shape does not change.
+    const action = row.updateVersion !== null
+      ? <Button key="update" label={`update ${row.updateVersion}`} onPress={runUpdate} />
+      : <Text> </Text>
 
     // The Texts sit straight in the Box, the Button last, as the band's own
     // examples draw: a fragment or a wrapper Box is laid out as a column on
@@ -425,7 +505,7 @@ export const register: Register = on => {
           <Text dimColor>  session </Text>
           <Text color="success">{session}</Text>
           <Text>  </Text>
-          <Button key="update" label="update" onPress={update} />
+          {action}
         </Box>
       )
     }
@@ -448,7 +528,7 @@ export const register: Register = on => {
           <Text dimColor>  session </Text>
           <Text color="success">{session}</Text>
           <Text>  </Text>
-          <Button key="update" label="update" onPress={update} />
+          {action}
         </Box>
       </Box>
     )

@@ -99,6 +99,10 @@ claude plugin install cc-statistics@cc-statistics --scope user
 只改文件不 bump 版本的话，`claude plugin update` 会认为「已是最新」，副本不会
 更新，reload 也就仍跑旧代码——这是最常见的「改完没生效」。
 
+横栏上的 `update` 按钮对新版本的两条判断路径：文件夹安装比对 `folderVersion`；
+从 GitHub 安装的没有这个字段，插件会按 `known_marketplaces.json` 里记录的仓库去
+拉 `.claude-plugin/plugin.json` 比对版本（网络不通或不是 GitHub 源时不显示按钮）。
+
 ## 开发
 
 - 校验：`claude plugin validate <文件夹>`

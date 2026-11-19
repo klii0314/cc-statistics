@@ -4,6 +4,7 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 import type { Reading, Tokens } from '../types'
 import { costOf, hasRates, parsePricing, ratesFor } from './pricing'
 import type { Pricing } from './pricing'
+import { isNewer, pluginJsonUrl, repoOf } from './versions'
 
 const NO_TOKENS: Tokens = { input: 0, cached: 0, output: 0 }
 
@@ -112,6 +113,76 @@ const CHECK_EVERY_MS = 5 * 60_000
 let lastCheckAt = 0
 let isChecking = false
 
+// The directory holding known_marketplaces.json, found by climbing out of the
+// installed copy (`.../.claude/plugins/cache/<market>/<plugin>/<version>`).
+async function pluginsDirectory($: EngineInterface): Promise<string | null> {
+  const sep = $.plugin.root.includes('\\') ? '\\' : '/'
+  let dir = $.plugin.root
+
+  for (let i = 0; i < 6; i += 1) {
+    const cut = dir.lastIndexOf(sep)
+
+    if (cut <= 0) {
+      return null
+    }
+
+    dir = dir.slice(0, cut)
+
+    if (await $.fs.exists(`${dir}${sep}known_marketplaces.json`)) {
+      return dir
+    }
+  }
+
+  return null
+}
+
+// A marketplace install keeps no copy of the folder the version would come
+// from, so the repository recorded for its marketplace is asked directly.
+async function remoteVersion(
+  $: EngineInterface,
+  marketplace: string,
+  installed: string,
+): Promise<string | null> {
+  const dir = await pluginsDirectory($)
+
+  if (dir === null) {
+    return null
+  }
+
+  const sep = dir.includes('\\') ? '\\' : '/'
+  const known: unknown = JSON.parse(await $.fs.read(`${dir}${sep}known_marketplaces.json`))
+
+  if (known === null || typeof known !== 'object') {
+    return null
+  }
+
+  const entry = (known as Record<string, unknown>)[marketplace]
+  const source = entry !== null && typeof entry === 'object'
+    ? (entry as { source?: unknown }).source
+    : null
+  const repo = repoOf(source)
+
+  if (repo === null) {
+    return null
+  }
+
+  const response = await $.http.fetch(pluginJsonUrl(repo))
+
+  if (!response.ok) {
+    return null
+  }
+
+  const remote: unknown = JSON.parse(response.text)
+
+  if (remote === null || typeof remote !== 'object') {
+    return null
+  }
+
+  const version = (remote as { version?: unknown }).version
+
+  return typeof version === 'string' && isNewer(version, installed) ? version : null
+}
+
 async function newerVersion($: EngineInterface): Promise<string | null> {
   const result = await $.process.run(
     ['claude', 'plugin', 'list', '--json'],
@@ -144,7 +215,15 @@ async function newerVersion($: EngineInterface): Promise<string | null> {
     const installed = typeof row.version === 'string' ? row.version : null
     const onDisk = typeof row.folderVersion === 'string' ? row.folderVersion : null
 
-    return installed !== null && onDisk !== null && onDisk !== installed ? onDisk : null
+    if (installed === null) {
+      return null
+    }
+
+    if (onDisk !== null) {
+      return onDisk !== installed ? onDisk : null
+    }
+
+    return await remoteVersion($, row.id.slice(prefix.length), installed)
   }
 
   return null

@@ -371,7 +371,7 @@ export const register: Register = on => {
     }
 
     const row = await read($, reading)
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const ttft = row.ttftMs !== null ? seconds(row.ttftMs) : row.isStreaming ? '…' : '—'
     const tps = row.tps !== null
       ? `${rate(row.tps)} token/s`
@@ -383,8 +383,32 @@ export const register: Register = on => {
     const turn = row.turnUsd !== null ? `${dollars(row.turnUsd)}${mark}` : '—'
     const session = row.sessionUsd !== null ? `${dollars(row.sessionUsd)}${mark}` : '—'
 
-    // The Texts sit straight in the Box: a fragment would be laid out as a
-    // column on the desktop surface, so each one is a sibling here.
+    // The band's one action: pull the installed plugin's next version, then
+    // say how it lands. A folder install reads its folder, so this is mostly
+    // a no-op there; a marketplace install fetches the new copy.
+    const update = async (): Promise<void> => {
+      try {
+        const result = await $.process.run(
+          ['claude', 'plugin', 'update', $.plugin.name],
+          { timeoutMs: 120_000 },
+        )
+        const line = (result.stdout || result.stderr)
+          .trim()
+          .split(/\r?\n/)
+          .filter(part => part.trim() !== '')
+          .pop()
+
+        $.ui.toast(result.exitCode === 0
+          ? `${line ?? '已更新'}；运行 /reload-plugins 生效`
+          : `更新失败：${line ?? `exit ${result.exitCode}`}`)
+      } catch (error) {
+        $.ui.toast(`无法运行 claude：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    // The Texts sit straight in the Box, the Button last, as the band's own
+    // examples draw: a fragment or a wrapper Box is laid out as a column on
+    // the desktop surface, so each child is a sibling here.
     if (e.props.bodyColumns >= WIDE_COLUMNS) {
       return (
         <Box>
@@ -400,6 +424,8 @@ export const register: Register = on => {
           <Text color="warning">{turn}</Text>
           <Text dimColor>  session </Text>
           <Text color="success">{session}</Text>
+          <Text>  </Text>
+          <Button key="update" label="update" onPress={update} />
         </Box>
       )
     }
@@ -421,6 +447,8 @@ export const register: Register = on => {
           <Text color="warning">{turn}</Text>
           <Text dimColor>  session </Text>
           <Text color="success">{session}</Text>
+          <Text>  </Text>
+          <Button key="update" label="update" onPress={update} />
         </Box>
       </Box>
     )

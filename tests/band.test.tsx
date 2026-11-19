@@ -41,6 +41,7 @@ test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async 
     expect((await ui.find({ type: 'Text', text: /88\.40%/ }))?.text).toBe('88.40%')
     expect((await ui.find({ type: 'Text', text: /\$0\.0042/ }))?.text).toBe('$0.0042')
     expect((await ui.find({ type: 'Text', text: /\$0\.0421/ }))?.text).toBe('$0.0421')
+    expect(await ui.find({ type: 'Button', key: 'update' })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -58,9 +59,9 @@ test('the stats are Text siblings in one Box, not a column', async ($, on) => {
   expect(tree.type).toBe('Box')
 
   const children = tree.type === 'Box' ? tree.children ?? [] : []
-  expect(children).toHaveLength(12)
+  expect(children).toHaveLength(14)
 
-  for (const child of children) {
+  for (const child of children.slice(0, 13)) {
     expect(typeof child === 'string' || child.type === 'Text').toBe(true)
   }
   await ui.unmount()

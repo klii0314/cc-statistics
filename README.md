@@ -17,6 +17,10 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 | `turn` | 本轮对话到目前为止的花费（本轮开始时的会话总额与当前总额之差）。 |
 | `session` | 整个会话到目前为止的花费，默认与 `/cost` 一致；配置了 `pricing.json` 后按自定义费率。 |
 
+横栏行尾（数字之后）有一个 `update` 按钮：点它执行 `claude plugin update cc-statistics`，
+结果以 toast 提示，然后按提示 `/reload-plugins` 生效。文件夹安装本来就读原目录，
+所以通常只会显示「已是最新」。
+
 两个花费带 `*` 时（如 `$0.0042*`），表示用的是 `pricing.json` 里的自定义费率或倍率，而不是引擎账本。详见下面的「计费」。
 
 `TTFT`/`TPS` 只统计主对话循环的最新一次请求；`tokens`/`cache` 还把子代理

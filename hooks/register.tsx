@@ -20,7 +20,7 @@ const EMPTY: Reading = {
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
-  { plugin: 'show-statistics', key: 'reading' } as const,
+  { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
   { shape: 'reading-3' },
 )
@@ -118,7 +118,7 @@ export const register: Register = on => {
 
     warned.add(model)
 
-    return `show-statistics: no pricing row matches ${model}; its tokens are priced at $0`
+    return `cc-statistics: no pricing row matches ${model}; its tokens are priced at $0`
   }
 
   on('session.start', async ($, e, next) => {

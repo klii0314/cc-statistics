@@ -1,5 +1,5 @@
 /**
- * What the show-statistics band draws, for the main loop's latest turn.
+ * What the cc-statistics band draws, for the main loop's latest turn.
  *
  * A reload of the module meets the values an earlier version stored, so the
  * `reading` atom carries a shape tag: bump it whenever this contract changes.
@@ -41,6 +41,6 @@ export type Tokens = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'show-statistics': { reading: Shaped<Reading> }
+    'cc-statistics': { reading: Shaped<Reading> }
   }
 }

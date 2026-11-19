@@ -1,6 +1,6 @@
 {
-  "name": "show-statistics",
+  "name": "cc-statistics",
   "owner": { "name": "klii0314" },
   "description": "klii 的本地 Claude Code 插件市场",
-  "plugins": [{ "name": "show-statistics", "source": "./" }]
+  "plugins": [{ "name": "cc-statistics", "source": "./" }]
 }

@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const BAND = {
-  plugin: 'show-statistics',
+  plugin: 'cc-statistics',
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,

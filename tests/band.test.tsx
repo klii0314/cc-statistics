@@ -102,6 +102,26 @@ test('costs priced from the plugin rates carry a star', async ($, on) => {
   await ui.unmount()
 })
 
+test('tokens keep two decimals', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: {
+        shape: 'reading-4',
+        value: {
+          ...READING,
+          tokens: { input: 52_000_000, cached: 51_900_000, output: 110_000 },
+        },
+      },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect((await ui.find({ type: 'Text', text: /52\.11M/ }))?.text).toBe('52.11M')
+  await ui.unmount()
+})
+
 test('before anything is measured the row shows dashes', async $ => {
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 

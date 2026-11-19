@@ -1,4 +1,4 @@
-# show-cost
+# show-statistics
 
 在输入框正上方的横栏（AbovePrompt band）里显示这一轮对话的推理指标：
 
@@ -63,10 +63,10 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 从 GitHub 安装（`<owner>/<repo>` 换成仓库地址，需要 Claude Code 2.1.275 或更新）：
 
 ```bash
-claude plugin install show-cost --marketplace <owner>/<repo>
+claude plugin install show-statistics --marketplace <owner>/<repo>
 ```
 
-终端会话里也可以直接输入 `/plugin install show-cost --marketplace <owner>/<repo>`；
+终端会话里也可以直接输入 `/plugin install show-statistics --marketplace <owner>/<repo>`；
 桌面应用的 Code 标签页走 **+ → Plugins → Add marketplace**，填 `<owner>/<repo>`。
 选 user 作用域后，之后再启动的每个会话都会加载。
 
@@ -74,12 +74,12 @@ claude plugin install show-cost --marketplace <owner>/<repo>
 
 ```bash
 claude plugin marketplace add <repo folder>
-claude plugin install show-cost@klii-local --scope user
+claude plugin install show-statistics@show-statistics --scope user
 ```
 
 文件夹型 marketplace 直接读原目录，改完运行 `/reload-plugins` 就生效；
 从 GitHub 安装的则是安装时那份副本，需要 push 新版本后
-`claude plugin update show-cost` 再 `/reload-plugins`。
+`claude plugin update show-statistics` 再 `/reload-plugins`。
 
 ## 开发
 

@@ -1,6 +1,6 @@
 {
-  "name": "klii-local",
-  "owner": { "name": "klii" },
+  "name": "show-statistics",
+  "owner": { "name": "klii0314" },
   "description": "klii 的本地 Claude Code 插件市场",
-  "plugins": [{ "name": "show-cost", "source": "./" }]
+  "plugins": [{ "name": "show-statistics", "source": "./" }]
 }

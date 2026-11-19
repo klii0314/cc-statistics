@@ -468,13 +468,19 @@ export const register: Register = on => {
           .filter(part => part.trim() !== '')
           .pop()
 
+        if (result.exitCode === 0) {
+          // Clear the button first, then ask the CLI again past the throttle,
+          // then ask for the redraw: whichever of these the surface honours,
+          // the row stops offering the version it just took.
+          await update($, reading, row => ({ ...row, updateVersion: null }))
+          lastCheckAt = 0
+          void checkUpdate($)
+          $.ui.invalidate('ui.render')
+        }
+
         $.ui.toast(result.exitCode === 0
           ? `${line ?? '已更新'}；运行 /reload-plugins 生效`
           : `更新失败：${line ?? `exit ${result.exitCode}`}`)
-
-        if (result.exitCode === 0) {
-          await update($, reading, row => ({ ...row, updateVersion: null }))
-        }
       } catch (error) {
         $.ui.toast(`无法运行 claude：${error instanceof Error ? error.message : String(error)}`)
       }

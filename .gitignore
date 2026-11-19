@@ -1,0 +1,5 @@
+# written by the engine when this folder is loaded as a dev plugin
+.claude-plugin/types/
+
+# a person's own rates, kept out of the shared plugin
+pricing.json

@@ -1,0 +1,8 @@
+{
+  "multiplier": 1,
+  "models": {
+    "claude-sonnet-4-5": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite": 1.25 },
+    "sonnet": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite": 1.25 }
+  },
+  "fallback": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite": 1.25 }
+}

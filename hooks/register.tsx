@@ -297,7 +297,17 @@ async function accumulatorKey($: EngineInterface): Promise<string | null> {
   }
 }
 
-async function persistReading($: EngineInterface, value: Reading): Promise<void> {
+// True while this load has not yet read its store entry back: the row starts
+// empty when the state did not survive, and the stored total is added to
+// whatever this load counts before it.
+let restoreNeeded = false
+
+async function persistReading($: EngineInterface): Promise<void> {
+  // A response can end before the store was read (session.start runs before
+  // the transcript is there to name the conversation): settle it first, so
+  // the write carries the old total rather than replacing it.
+  await restoreReading($)
+
   const key = await accumulatorKey($)
 
   if (key === null) {
@@ -305,18 +315,25 @@ async function persistReading($: EngineInterface, value: Reading): Promise<void>
   }
 
   try {
-    await $.store.set(key, { tokens: value.tokens, customUsd: value.customUsd })
+    const row = await read($, reading)
+    await $.store.set(key, { tokens: row.tokens, customUsd: row.customUsd })
   } catch {
     // A refused write costs the next restart, never the row on screen.
   }
 }
 
 async function restoreReading($: EngineInterface): Promise<void> {
+  if (!restoreNeeded) {
+    return
+  }
+
   const key = await accumulatorKey($)
 
   if (key === null) {
     return
   }
+
+  restoreNeeded = false
 
   try {
     const saved = await $.store.get(key)
@@ -343,11 +360,17 @@ async function restoreReading($: EngineInterface): Promise<void> {
     const tokens: Tokens = { input: token.input, cached: token.cached, output: token.output }
     const customUsd = typeof record.customUsd === 'number' ? record.customUsd : 0
 
-    await update($, reading, row => (
-      row.tokens.input + row.tokens.output > 0
-        ? row
-        : { ...row, tokens, customUsd }
-    ))
+    // The state was empty when this load began, so whatever it holds now is
+    // this load's own count: the stored total goes on top of it.
+    await update($, reading, row => ({
+      ...row,
+      tokens: {
+        input: tokens.input + row.tokens.input,
+        cached: tokens.cached + row.tokens.cached,
+        output: tokens.output + row.tokens.output,
+      },
+      customUsd: customUsd + row.customUsd,
+    }))
   } catch {
     // Nothing saved, or a store that cannot be read: the session starts fresh.
   }
@@ -467,7 +490,9 @@ export const register: Register = on => {
     turnStartUsd = usage.cost?.usd ?? null
     // The plugin starts again on a reload and on a worker respawn, both inside
     // the same session: keep what the row already counted instead of zeroing
-    // it, or every reload reads as a reset.
+    // it, or every reload reads as a reset. A row that is empty here lost its
+    // state, and the store's total is waiting for it.
+    restoreNeeded = (await read($, reading)).tokens.input === 0
     await restoreReading($)
     await update($, reading, row => ({
       ...row,
@@ -548,6 +573,9 @@ export const register: Register = on => {
 
     // Throttled: at most one CLI call every few minutes, never per draw.
     void checkUpdate($)
+    // The transcript names the conversation here even when session.start ran
+    // before it was there.
+    void restoreReading($)
     filePricing = await loadPricing($)
     pricing = withRates(filePricing, (await read($, reading)).rates)
     const active = pricing
@@ -666,7 +694,7 @@ export const register: Register = on => {
             turnUsd: (row.turnUsd ?? 0) + delta,
             pricedBy: 'custom' as const,
           }))
-          void persistReading($, written)
+          void persistReading($)
         } else {
           // The engine's ledger, scaled when the file names a multiplier.
           const session = await $.session.usage()
@@ -686,7 +714,7 @@ export const register: Register = on => {
             turnUsd,
             pricedBy: (multiplier !== 1 ? 'custom' : 'ledger') as Reading['pricedBy'],
           }))
-          void persistReading($, written)
+          void persistReading($)
         }
 
         settled = true
@@ -735,10 +763,10 @@ export const register: Register = on => {
             turnUsd: (row.turnUsd ?? 0) + delta,
             pricedBy: 'custom' as const,
           }))
-          void persistReading($, written)
+          void persistReading($)
         } else {
           const written = await update($, reading, row => ({ ...row, tokens: withUsage(row.tokens, usage) }))
-          void persistReading($, written)
+          void persistReading($)
         }
       }
 

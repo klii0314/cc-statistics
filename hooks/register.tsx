@@ -259,20 +259,41 @@ async function checkUpdate($: EngineInterface): Promise<void> {
 // empty. The accumulator is mirrored into `$.store` under the session's id:
 // a reload, a respawn and a resume keep the id and read it back, a new chat
 // has a new id and starts at zero.
-let storeKey: string | null | undefined
+// The conversation, by the text of its first user message: a restart resumes
+// under a new session id with a copied transcript, so the id changes while
+// that message does not. A brand-new chat has no message yet and no key.
+let storeKey: string | null = null
+
+function hashText(text: string): string {
+  let hash = 2166136261
+
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return (hash >>> 0).toString(16)
+}
 
 async function accumulatorKey($: EngineInterface): Promise<string | null> {
-  if (storeKey !== undefined) {
+  if (storeKey !== null) {
     return storeKey
   }
 
   try {
-    storeKey = `reading:${await $.session.id()}`
-  } catch {
-    storeKey = null
-  }
+    const messages = await $.session.messages()
+    const opening = messages.find(message => message.role === 'user' && message.text.trim() !== '')
 
-  return storeKey
+    if (opening === undefined) {
+      return null
+    }
+
+    storeKey = `reading:${hashText(opening.text)}`
+
+    return storeKey
+  } catch {
+    return null
+  }
 }
 
 async function persistReading($: EngineInterface, value: Reading): Promise<void> {

@@ -3,7 +3,7 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
 import type { Fields, Reading, StoredPricing, Tokens } from '../types'
 import { ALL_FIELDS, readFields, sameFields } from './fields'
-import { costOf, hasRates, parsePricing, ratesFor, readRates } from './pricing'
+import { hasRates, parsePricing, ratesFor, readRates } from './pricing'
 import type { Pricing, Rates } from './pricing'
 import { isNewer, pluginJsonUrl, repoOf } from './versions'
 
@@ -329,7 +329,7 @@ async function persistReading($: EngineInterface): Promise<void> {
 
   try {
     const row = await read($, reading)
-    await $.store.set(key, { tokens: row.tokens, customUsd: row.customUsd })
+    await $.store.set(key, { tokens: row.tokens, customUsd: row.customUsd, model: row.model })
   } catch {
     // A refused write costs the next restart, never the row on screen.
   }
@@ -355,7 +355,7 @@ async function restoreReading($: EngineInterface): Promise<void> {
       return
     }
 
-    const record = saved as { tokens?: unknown; customUsd?: unknown }
+    const record = saved as { tokens?: unknown; customUsd?: unknown; model?: unknown }
     const counts = record.tokens
 
     if (counts === null || typeof counts !== 'object') {
@@ -372,6 +372,7 @@ async function restoreReading($: EngineInterface): Promise<void> {
 
     const tokens: Tokens = { input: token.input, cached: token.cached, output: token.output }
     const customUsd = typeof record.customUsd === 'number' ? record.customUsd : 0
+    const model = typeof record.model === 'string' ? record.model : null
 
     // The state was empty when this load began, so whatever it holds now is
     // this load's own count: the stored total goes on top of it.
@@ -383,7 +384,24 @@ async function restoreReading($: EngineInterface): Promise<void> {
         output: tokens.output + row.tokens.output,
       },
       customUsd: customUsd + row.customUsd,
+      model: model ?? row.model,
     }))
+
+    // With the menu's rates in force, the restored counts are priced here
+    // rather than left on the engine's ledger, which would read as dollars
+    // under the chosen symbol.
+    const stored = await savedRates($)
+    const active = withRates(await loadPricing($), stored)
+    const bound = model ?? (await read($, reading)).model
+    const rates = active === null || bound === null ? null : ratesFor(active, bound)
+
+    if (active !== null && rates !== null && bound !== null) {
+      await update($, reading, row => {
+        const sessionUsd = priceTokens(row.tokens, rates, active.multiplier)
+
+        return { ...row, pricedBy: 'custom' as const, customUsd: sessionUsd, sessionUsd, turnUsd: 0 }
+      })
+    }
   } catch {
     // Nothing saved, or a store that cannot be read: the session starts fresh.
   }
@@ -571,6 +589,8 @@ export const register: Register = on => {
     const result = await next(e)
     const usage = await $.session.usage()
     turnStartUsd = usage.cost?.usd ?? null
+    const active = withRates(await loadPricing($), await savedRates($))
+    const isCustom = active !== null && hasRates(active)
     // The plugin starts again on a reload and on a worker respawn, both inside
     // the same session: keep what the row already counted instead of zeroing
     // it, or every reload reads as a reset. A row that is empty here lost its
@@ -579,15 +599,11 @@ export const register: Register = on => {
     await restoreReading($)
     await update($, reading, row => ({
       ...row,
-      sessionUsd: usage.cost?.usd ?? row.sessionUsd,
+      // The ledger's figure is dollars; with the menu's rates in force the
+      // restore has just priced the tokens and must not be overwritten.
+      sessionUsd: isCustom ? row.sessionUsd : (usage.cost?.usd ?? row.sessionUsd),
     }))
     // Follow the selection another session saved, then keep following it.
-    const sessionModel = await $.session.model().catch(() => null)
-
-    if (sessionModel !== null) {
-      await update($, reading, row => (row.model === sessionModel ? row : { ...row, model: sessionModel }))
-    }
-
     const shared = await savedFields($)
 
     if (shared !== null && !sameFields(shared, (await read($, reading)).fields)) {
@@ -677,7 +693,7 @@ export const register: Register = on => {
         ...row,
         ttftMs: null,
         tps: null,
-        sessionUsd: row.customUsd,
+        sessionUsd: row.sessionUsd,
         turnUsd: 0,
         turnTokens: NO_TOKENS,
         // The turn's first request is about to leave: the row waits, not dashes.
@@ -770,23 +786,32 @@ export const register: Register = on => {
             $.ui.log(note)
           }
 
-          const delta = usage !== null && rates !== null
-            ? costOf(rates, usage, active.multiplier)
-            : 0
+          // The costs follow the tokens at the row's rates, so a reprice (a
+          // saved rate, a restore) can never leave them behind.
+          const written = await update($, reading, row => {
+            const tokens = usage === null ? row.tokens : withUsage(row.tokens, usage)
+            const turnTokens = usage === null ? row.turnTokens : withUsage(row.turnTokens, usage)
+            const sessionUsd = rates === null
+              ? row.sessionUsd
+              : priceTokens(tokens, rates, active.multiplier)
+            const turnUsd = rates === null
+              ? row.turnUsd
+              : priceTokens(turnTokens, rates, active.multiplier)
 
-          const written = await update($, reading, row => ({
-            ...row,
-            ttftMs: row.ttftMs ?? ttftMs,
-            tps,
-            isStreaming: false,
-            tokens: usage === null ? row.tokens : withUsage(row.tokens, usage),
-            turnTokens: usage === null ? row.turnTokens : withUsage(row.turnTokens, usage),
-            model: usage === null ? row.model : usage.model,
-            customUsd: row.customUsd + delta,
-            sessionUsd: row.customUsd + delta,
-            turnUsd: (row.turnUsd ?? 0) + delta,
-            pricedBy: 'custom' as const,
-          }))
+            return {
+              ...row,
+              ttftMs: row.ttftMs ?? ttftMs,
+              tps,
+              isStreaming: false,
+              tokens,
+              turnTokens,
+              model: usage === null ? row.model : usage.model,
+              customUsd: sessionUsd ?? row.customUsd,
+              sessionUsd,
+              turnUsd,
+              pricedBy: 'custom' as const,
+            }
+          })
           void persistReading($)
         } else {
           // The engine's ledger, scaled when the file names a multiplier.
@@ -849,15 +874,26 @@ export const register: Register = on => {
             $.ui.log(note)
           }
 
-          const delta = rates === null ? 0 : costOf(rates, usage, active.multiplier)
-          const written = await update($, reading, row => ({
-            ...row,
-            tokens: withUsage(row.tokens, usage),
-            customUsd: row.customUsd + delta,
-            sessionUsd: row.customUsd + delta,
-            turnUsd: (row.turnUsd ?? 0) + delta,
-            pricedBy: 'custom' as const,
-          }))
+          const written = await update($, reading, row => {
+            const tokens = withUsage(row.tokens, usage)
+            const turnTokens = withUsage(row.turnTokens, usage)
+            const sessionUsd = rates === null
+              ? row.sessionUsd
+              : priceTokens(tokens, rates, active.multiplier)
+            const turnUsd = rates === null
+              ? row.turnUsd
+              : priceTokens(turnTokens, rates, active.multiplier)
+
+            return {
+              ...row,
+              tokens,
+              turnTokens,
+              customUsd: sessionUsd ?? row.customUsd,
+              sessionUsd,
+              turnUsd,
+              pricedBy: 'custom' as const,
+            }
+          })
           void persistReading($)
         } else {
           const written = await update($, reading, row => ({ ...row, tokens: withUsage(row.tokens, usage) }))
@@ -985,9 +1021,9 @@ export const register: Register = on => {
       // The row binds to the model it is showing: the one that answered last,
       // or the session's own before any answer.
       const row0 = await read($, reading)
-      const model = row0.model ?? (await $.session.model().catch(() => ''))
+      const model = row0.model
 
-      if (model === '') {
+      if (model === null) {
         $.ui.toast('还不知道当前模型，先发一条消息')
 
         return
@@ -1016,12 +1052,17 @@ export const register: Register = on => {
       }
 
       // The row reprices what it already counted, the way the new numbers ask.
-      await update($, reading, row => ({
-        ...row,
-        pricedBy: 'custom' as const,
-        sessionUsd: priceTokens(row.tokens, rowRates, active.multiplier),
-        turnUsd: priceTokens(row.turnTokens, rowRates, active.multiplier),
-      }))
+      await update($, reading, row => {
+        const sessionUsd = priceTokens(row.tokens, rowRates, active.multiplier)
+
+        return {
+          ...row,
+          pricedBy: 'custom' as const,
+          customUsd: sessionUsd,
+          sessionUsd,
+          turnUsd: priceTokens(row.turnTokens, rowRates, active.multiplier),
+        }
+      })
     }
 
     // Every keystroke lands here, so a redraw from the streaming turn cannot

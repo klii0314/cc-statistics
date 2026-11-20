@@ -3,11 +3,13 @@ import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
 import type { Fields, Reading, Tokens } from '../types'
 import { ALL_FIELDS, readFields, sameFields } from './fields'
-import { costOf, hasRates, parsePricing, ratesFor } from './pricing'
-import type { Pricing } from './pricing'
+import { costOf, hasRates, parsePricing, ratesFor, readRates } from './pricing'
+import type { Pricing, Rates } from './pricing'
 import { isNewer, pluginJsonUrl, repoOf } from './versions'
 
 const NO_TOKENS: Tokens = { input: 0, cached: 0, output: 0 }
+
+const ZERO_RATES: Rates = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
 const EMPTY: Reading = {
   ttftMs: null,
@@ -21,13 +23,14 @@ const EMPTY: Reading = {
   updateVersion: null,
   fields: ALL_FIELDS,
   isMenuOpen: false,
+  rates: null,
 }
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-5' },
+  { shape: 'reading-6' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -349,11 +352,57 @@ async function saveFields($: EngineInterface, fields: Fields): Promise<void> {
   }
 }
 
+// ---- rates typed in the band ----------------------------------------------
+// The four prices live in `$.store` too, so every session prices the same and
+// a value survives a restart. They become the fallback row of the pricing
+// table: a model-specific row in pricing.json still wins.
+const RATES_KEY = 'rates'
+
+async function savedRates($: EngineInterface): Promise<Rates | null> {
+  try {
+    return readRates(await $.store.get(RATES_KEY))
+  } catch {
+    return null
+  }
+}
+
+async function saveRates($: EngineInterface, rates: Rates): Promise<void> {
+  try {
+    await $.store.set(RATES_KEY, rates)
+  } catch {
+    // A refused write costs the next session the value, never this row.
+  }
+}
+
+function sameRates(a: Rates | null, b: Rates | null): boolean {
+  if (a === null || b === null) {
+    return a === b
+  }
+
+  return a.input === b.input
+    && a.output === b.output
+    && a.cacheRead === b.cacheRead
+    && a.cacheWrite === b.cacheWrite
+}
+
+function withRates(pricing: Pricing | null, rates: Rates | null): Pricing | null {
+  if (rates === null) {
+    return pricing
+  }
+
+  return pricing === null
+    ? { multiplier: 1, models: {}, fallback: rates }
+    : { ...pricing, fallback: rates }
+}
+
 export const register: Register = on => {
   // The session's total when the main loop's current turn began; the module's
   // own, so a reload starts the turn's cost afresh.
   let turnStartUsd: number | null = null
   let pricing: Pricing | null = null
+  // The file's table alone, so a rate typed in the band can always be merged
+  // back in over it.
+  let filePricing: Pricing | null = null
   const warned = new Set<string>()
 
   // `$` may be spelled only at the call site, so the helper answers the line
@@ -387,12 +436,18 @@ export const register: Register = on => {
       await update($, reading, row => ({ ...row, fields: shared }))
     }
 
+    const sharedRates = await savedRates($)
+    await update($, reading, row => (sameRates(row.rates, sharedRates) ? row : { ...row, rates: sharedRates }))
+
     $.clock.every(FIELD_SYNC_MS, async () => {
       const saved = await savedFields($)
 
       if (saved !== null) {
         await update($, reading, row => (sameFields(row.fields, saved) ? row : { ...row, fields: saved }))
       }
+
+      const rates = await savedRates($)
+      await update($, reading, row => (sameRates(row.rates, rates) ? row : { ...row, rates }))
     })
 
     // Ask behind the turn, not inside it: the answer lands in the row.
@@ -437,7 +492,8 @@ export const register: Register = on => {
 
     // Throttled: at most one CLI call every few minutes, never per draw.
     void checkUpdate($)
-    pricing = await loadPricing($)
+    filePricing = await loadPricing($)
+    pricing = withRates(filePricing, (await read($, reading)).rates)
     const active = pricing
 
     if (active !== null && hasRates(active)) {
@@ -662,7 +718,7 @@ export const register: Register = on => {
     }
 
     const row = await read($, reading)
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
     const ttft = row.ttftMs !== null ? seconds(row.ttftMs) : row.isStreaming ? '…' : '—'
     const tps = row.tps !== null
       ? `${rate(row.tps)} token/s`
@@ -732,14 +788,74 @@ export const register: Register = on => {
       void saveFields($, written.fields)
     }
 
+    // A rate typed here becomes this session's fallback row at once, and the
+    // other sessions pick it up from the store.
+    const submitRate = async (name: keyof Rates, text: string): Promise<void> => {
+      const trimmed = text.trim()
+      const value = Number(trimmed)
+
+      if (trimmed === '' || !Number.isFinite(value) || value < 0) {
+        $.ui.toast('费率要填非负数字（美元 / 百万 token）')
+
+        return
+      }
+
+      const current = (await read($, reading)).rates ?? pricing?.fallback ?? ZERO_RATES
+      const rates: Rates = { ...current }
+      rates[name] = value
+
+      await update($, reading, row => ({ ...row, rates }))
+      void saveRates($, rates)
+      pricing = withRates(filePricing, rates)
+    }
+
+    const rateText = (name: keyof Rates): string => {
+      const value = row.rates?.[name]
+
+      return value === undefined ? '' : String(value)
+    }
+
     const menu = (
-      <Box gap="xs" paddingX={1}>
-        <Button key="f-ttft" label={`${f.ttft ? '✓' : '·'} ttft`} onPress={() => toggleField('ttft')} />
-        <Button key="f-tps" label={`${f.tps ? '✓' : '·'} tps`} onPress={() => toggleField('tps')} />
-        <Button key="f-tokens" label={`${f.tokens ? '✓' : '·'} tokens`} onPress={() => toggleField('tokens')} />
-        <Button key="f-cache" label={`${f.cache ? '✓' : '·'} cache`} onPress={() => toggleField('cache')} />
-        <Button key="f-turn" label={`${f.turn ? '✓' : '·'} turn`} onPress={() => toggleField('turn')} />
-        <Button key="f-session" label={`${f.session ? '✓' : '·'} session`} onPress={() => toggleField('session')} />
+      <Box flexDirection="column" gap="xs">
+        <Box gap="xs" paddingX={1}>
+          <Button key="f-ttft" label={`${f.ttft ? '✓' : '·'} ttft`} onPress={() => toggleField('ttft')} />
+          <Button key="f-tps" label={`${f.tps ? '✓' : '·'} tps`} onPress={() => toggleField('tps')} />
+          <Button key="f-tokens" label={`${f.tokens ? '✓' : '·'} tokens`} onPress={() => toggleField('tokens')} />
+          <Button key="f-cache" label={`${f.cache ? '✓' : '·'} cache`} onPress={() => toggleField('cache')} />
+          <Button key="f-turn" label={`${f.turn ? '✓' : '·'} turn`} onPress={() => toggleField('turn')} />
+          <Button key="f-session" label={`${f.session ? '✓' : '·'} session`} onPress={() => toggleField('session')} />
+        </Box>
+        <Box gap="sm" paddingX={1}>
+          <Text dimColor>$ / 1M tokens</Text>
+          <Input
+            key="rate-input"
+            label="input "
+            placeholder="0"
+            value={rateText('input')}
+            onSubmit={value => submitRate('input', value)}
+          />
+          <Input
+            key="rate-output"
+            label="output "
+            placeholder="0"
+            value={rateText('output')}
+            onSubmit={value => submitRate('output', value)}
+          />
+          <Input
+            key="rate-cacheRead"
+            label="cacheRead "
+            placeholder="0"
+            value={rateText('cacheRead')}
+            onSubmit={value => submitRate('cacheRead', value)}
+          />
+          <Input
+            key="rate-cacheWrite"
+            label="cacheWrite "
+            placeholder="0"
+            value={rateText('cacheWrite')}
+            onSubmit={value => submitRate('cacheWrite', value)}
+          />
+        </Box>
       </Box>
     )
 

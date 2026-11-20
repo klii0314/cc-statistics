@@ -33,6 +33,19 @@ export type Reading = {
   fields: Fields
   /** True while the menu of readings is open under the row. */
   isMenuOpen: boolean
+  /**
+   * The rates set from the menu, US dollars per million tokens; null until one
+   * is typed, when the engine's ledger (or pricing.json) prices the costs.
+   */
+  rates: Rates | null
+}
+
+/** US dollars per million tokens, the four a response is billed at. */
+export type Rates = {
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
 }
 
 /** Which readings the row shows; the menu on the left toggles them. */

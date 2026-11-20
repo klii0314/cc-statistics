@@ -26,12 +26,13 @@ const READING = {
   updateVersion: '0.5.3',
   fields: { ttft: true, tps: true, tokens: true, cache: true, turn: true, session: true },
   isMenuOpen: false,
+  rates: null,
 }
 
 test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async ($, on) => {
   // What the mod's atom reads: the stored value and the version it stands at.
   on('state.get', () => ({
-    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-6', value: READING }, version: 1 },
   }))
 
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
@@ -51,7 +52,7 @@ test('the band draws TTFT, TPS, tokens, cache and cost on every surface', async 
 
 test('the stats are Text siblings in one Box, not a column', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-6', value: READING }, version: 1 },
   }))
 
   // A fragment in the tree is laid out as a column on the desktop surface, so
@@ -72,7 +73,7 @@ test('the stats are Text siblings in one Box, not a column', async ($, on) => {
 
 test('a narrow band moves the costs to a second line', async ($, on) => {
   on('state.get', () => ({
-    value: { value: { shape: 'reading-5', value: READING }, version: 1 },
+    value: { value: { shape: 'reading-6', value: READING }, version: 1 },
   }))
 
   const ui = await $.ui.mount({
@@ -90,7 +91,7 @@ test('costs priced from the plugin rates carry a star', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-5',
+        shape: 'reading-6',
         value: { ...READING, pricedBy: 'custom', customUsd: 0.0042 },
       },
       version: 1,
@@ -108,7 +109,7 @@ test('tokens keep two decimals', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-5',
+        shape: 'reading-6',
         value: {
           ...READING,
           tokens: { input: 52_000_000, cached: 51_900_000, output: 110_000 },
@@ -131,11 +132,27 @@ test('before anything is measured the row shows dashes', async $ => {
   await ui.unmount()
 })
 
+test('the menu holds the rate fields', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: { shape: 'reading-6', value: { ...READING, isMenuOpen: true } },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect(await ui.find({ key: 'rate-input' })).toBeDefined()
+  expect(await ui.find({ key: 'rate-cacheRead' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /\$ \/ 1M tokens/ }))?.text).toBe('$ / 1M tokens')
+  await ui.unmount()
+})
+
 test('a field turned off draws nothing of itself', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
-        shape: 'reading-5',
+        shape: 'reading-6',
         value: {
           ...READING,
           fields: { ...READING.fields, ttft: false },
@@ -155,7 +172,7 @@ test('a field turned off draws nothing of itself', async ($, on) => {
 test('no newer version means no update button', async ($, on) => {
   on('state.get', () => ({
     value: {
-      value: { shape: 'reading-5', value: { ...READING, updateVersion: null } },
+      value: { shape: 'reading-6', value: { ...READING, updateVersion: null } },
       version: 1,
     },
   }))

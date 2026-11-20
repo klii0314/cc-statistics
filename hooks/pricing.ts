@@ -40,7 +40,7 @@ function isRate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
-function parseRates(raw: unknown): Rates | null {
+export function readRates(raw: unknown): Rates | null {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return null
   }
@@ -76,7 +76,7 @@ export function parsePricing(raw: unknown): Pricing | null {
 
   if (table !== null && typeof table === 'object' && !Array.isArray(table)) {
     for (const [model, row] of Object.entries(table)) {
-      const rates = parseRates(row)
+      const rates = readRates(row)
 
       if (rates !== null) {
         models[model] = rates
@@ -84,7 +84,7 @@ export function parsePricing(raw: unknown): Pricing | null {
     }
   }
 
-  const fallback = parseRates(file.fallback) ?? undefined
+  const fallback = readRates(file.fallback) ?? undefined
 
   return { multiplier, models, fallback }
 }

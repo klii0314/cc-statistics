@@ -851,8 +851,11 @@ export const register: Register = on => {
       void saveCurrency($, value)
     }
 
+    // The field shows the rate in force: the one saved from the menu, else the
+    // pricing.json fallback the costs are being priced at.
+    const inForce = row.rates ?? pricing?.fallback ?? null
     const rateText = (name: keyof Rates): string => {
-      const value = row.rates?.[name]
+      const value = inForce === null ? undefined : inForce[name]
 
       return value === undefined ? '' : String(value)
     }
@@ -882,28 +885,28 @@ export const register: Register = on => {
           <Input
             key="rate-input"
             label="input "
-            placeholder="0"
+            placeholder="—"
             value={rateText('input')}
             onSubmit={value => submitRate('input', value)}
           />
           <Input
             key="rate-output"
             label="output "
-            placeholder="0"
+            placeholder="—"
             value={rateText('output')}
             onSubmit={value => submitRate('output', value)}
           />
           <Input
             key="rate-cacheRead"
             label="cacheRead "
-            placeholder="0"
+            placeholder="—"
             value={rateText('cacheRead')}
             onSubmit={value => submitRate('cacheRead', value)}
           />
           <Input
             key="rate-cacheWrite"
             label="cacheWrite "
-            placeholder="0"
+            placeholder="—"
             value={rateText('cacheWrite')}
             onSubmit={value => submitRate('cacheWrite', value)}
           />

@@ -150,6 +150,28 @@ test('the menu holds the rate fields', async ($, on) => {
   await ui.unmount()
 })
 
+test('the rate fields show the rate in force', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: {
+        shape: 'reading-7',
+        value: {
+          ...READING,
+          isMenuOpen: true,
+          rates: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+        },
+      },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect((await ui.find({ key: 'rate-input' }))?.text).toContain('3')
+  expect((await ui.find({ key: 'rate-cacheWrite' }))?.text).toContain('3.75')
+  await ui.unmount()
+})
+
 test('a field turned off draws nothing of itself', async ($, on) => {
   on('state.get', () => ({
     value: {

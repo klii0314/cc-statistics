@@ -1,6 +1,6 @@
 {
   "name": "cc-statistics",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Shows TTFT, tokens per second, token totals, cache hit rate and cost in the band above the prompt, priced by the engine or by your own rates",
   "types": "./types/index.d.ts"
 }

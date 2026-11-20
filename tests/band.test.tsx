@@ -133,6 +133,21 @@ test('before anything is measured the row shows dashes', async $ => {
   await ui.unmount()
 })
 
+test('the currency switch moves the ledger costs at once', async ($, on) => {
+  on('state.get', () => ({
+    value: {
+      value: { shape: 'reading-7', value: { ...READING, currency: 'cny' } },
+      version: 1,
+    },
+  }))
+
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  expect((await ui.find({ type: 'Text', text: /¥0\.0042/ }))?.text).toBe('¥0.0042')
+  expect((await ui.find({ type: 'Text', text: /¥0\.0421/ }))?.text).toBe('¥0.0421')
+  await ui.unmount()
+})
+
 test('the menu holds the rate fields', async ($, on) => {
   on('state.get', () => ({
     value: {

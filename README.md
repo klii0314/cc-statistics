@@ -27,7 +27,8 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 数值才真正按 ¥ 费率计算（行尾带 `*`）。
 
 费率行接着是 `/ 1M tokens` 后面四个输入框 `input`、`output`、`cacheRead`、
-`cacheWrite`，填好按回车保存，单位是美元 / 百万 token。填了之后 `turn`/`session`
+`cacheWrite`，填好按回车保存，单位是美元 / 百万 token。输入的内容会随按键即时保存在
+会话状态里，横栏因流式更新重绘时不会把你打了一半的数字冲掉——只有回车才真正写入费率。填了之后 `turn`/`session`
 改为按这些费率计算（行尾带 `*`）；`pricing.json` 里针对具体模型的费率仍然优先，
 这些值作为兜底。和开关一样，费率也存进 `$.store`、跨会话共享。
 

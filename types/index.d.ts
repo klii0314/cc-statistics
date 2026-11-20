@@ -43,6 +43,16 @@ export type Reading = {
    * plugin priced itself; the engine's ledger is always US dollars.
    */
   currency: 'usd' | 'cny'
+  /**
+   * What has been typed into a rate field but not saved yet, by field: the
+   * field keeps it through the redraws a streaming turn brings.
+   */
+  drafts: {
+    input?: string
+    output?: string
+    cacheRead?: string
+    cacheWrite?: string
+  }
 }
 
 /** US dollars per million tokens, the four a response is billed at. */

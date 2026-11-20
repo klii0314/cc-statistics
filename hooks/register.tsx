@@ -25,13 +25,14 @@ const EMPTY: Reading = {
   isMenuOpen: false,
   rates: null,
   currency: 'usd',
+  drafts: {},
 }
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-7' },
+  { shape: 'reading-8' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -863,9 +864,20 @@ export const register: Register = on => {
       const rates: Rates = { ...current }
       rates[name] = value
 
-      await update($, reading, row => ({ ...row, rates }))
+      await update($, reading, row => {
+        const drafts = { ...row.drafts }
+        delete drafts[name]
+
+        return { ...row, rates, drafts }
+      })
       void saveRates($, rates)
       pricing = withRates(filePricing, rates)
+    }
+
+    // Every keystroke lands here, so a redraw from the streaming turn cannot
+    // wipe what is being typed before Enter submits it.
+    const setDraft = async (name: keyof Rates, text: string): Promise<void> => {
+      await update($, reading, row => ({ ...row, drafts: { ...row.drafts, [name]: text } }))
     }
 
     const setCurrency = async (value: 'usd' | 'cny'): Promise<void> => {
@@ -877,6 +889,12 @@ export const register: Register = on => {
     // pricing.json fallback the costs are being priced at.
     const inForce = row.rates ?? pricing?.fallback ?? null
     const rateText = (name: keyof Rates): string => {
+      const draft = row.drafts[name]
+
+      if (draft !== undefined) {
+        return draft
+      }
+
       const value = inForce === null ? undefined : inForce[name]
 
       return value === undefined ? '' : String(value)
@@ -908,24 +926,28 @@ export const register: Register = on => {
             key="rate-input"
             label="input "
             value={rateText('input')}
+            onInput={value => setDraft('input', value)}
             onSubmit={value => submitRate('input', value)}
           />
           <Input
             key="rate-output"
             label="output "
             value={rateText('output')}
+            onInput={value => setDraft('output', value)}
             onSubmit={value => submitRate('output', value)}
           />
           <Input
             key="rate-cacheRead"
             label="cacheRead "
             value={rateText('cacheRead')}
+            onInput={value => setDraft('cacheRead', value)}
             onSubmit={value => submitRate('cacheRead', value)}
           />
           <Input
             key="rate-cacheWrite"
             label="cacheWrite "
             value={rateText('cacheWrite')}
+            onInput={value => setDraft('cacheWrite', value)}
             onSubmit={value => submitRate('cacheWrite', value)}
           />
         </Box>

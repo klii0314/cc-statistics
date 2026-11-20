@@ -885,28 +885,24 @@ export const register: Register = on => {
           <Input
             key="rate-input"
             label="input "
-            placeholder="—"
             value={rateText('input')}
             onSubmit={value => submitRate('input', value)}
           />
           <Input
             key="rate-output"
             label="output "
-            placeholder="—"
             value={rateText('output')}
             onSubmit={value => submitRate('output', value)}
           />
           <Input
             key="rate-cacheRead"
             label="cacheRead "
-            placeholder="—"
             value={rateText('cacheRead')}
             onSubmit={value => submitRate('cacheRead', value)}
           />
           <Input
             key="rate-cacheWrite"
             label="cacheWrite "
-            placeholder="—"
             value={rateText('cacheWrite')}
             onSubmit={value => submitRate('cacheWrite', value)}
           />

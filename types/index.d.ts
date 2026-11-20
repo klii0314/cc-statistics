@@ -17,6 +17,8 @@ export type Reading = {
   isStreaming: boolean
   /** Tokens this session has moved, as the API reported them. */
   tokens: Tokens
+  /** Tokens the current turn has moved, reset at its start. */
+  turnTokens: Tokens
   /**
    * How the two costs were priced: `ledger` is the engine's `/cost`, `custom`
    * is the plugin's own rates from `pricing.json` (or its multiplier).

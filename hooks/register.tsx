@@ -18,6 +18,7 @@ const EMPTY: Reading = {
   turnUsd: null,
   isStreaming: false,
   tokens: NO_TOKENS,
+  turnTokens: NO_TOKENS,
   pricedBy: 'ledger',
   customUsd: 0,
   updateVersion: null,
@@ -33,7 +34,7 @@ const EMPTY: Reading = {
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-9' },
+  { shape: 'reading-10' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -59,6 +60,17 @@ function money(amount: number, symbol: string): string {
   }
 
   return amount < 0.1 ? `${symbol}${amount.toFixed(4)}` : `${symbol}${amount.toFixed(2)}`
+}
+
+// What the accumulated tokens cost at one row's rates: the prompt's
+// cache-created part is folded into the uncached input, since only the total
+// is kept.
+function priceTokens(tokens: Tokens, rates: Rates, multiplier: number): number {
+  const uncached = Math.max(0, tokens.input - tokens.cached)
+
+  return (uncached * rates.input
+    + tokens.cached * rates.cacheRead
+    + tokens.output * rates.output) / 1_000_000 * multiplier
 }
 
 function count(n: number): string {
@@ -667,6 +679,7 @@ export const register: Register = on => {
         tps: null,
         sessionUsd: row.customUsd,
         turnUsd: 0,
+        turnTokens: NO_TOKENS,
         // The turn's first request is about to leave: the row waits, not dashes.
         isStreaming: true,
         pricedBy: 'custom' as const,
@@ -684,6 +697,7 @@ export const register: Register = on => {
       tps: null,
       sessionUsd: turnStartUsd ?? row.sessionUsd,
       turnUsd: null,
+      turnTokens: NO_TOKENS,
       isStreaming: true,
       pricedBy,
     }))
@@ -766,6 +780,7 @@ export const register: Register = on => {
             tps,
             isStreaming: false,
             tokens: usage === null ? row.tokens : withUsage(row.tokens, usage),
+            turnTokens: usage === null ? row.turnTokens : withUsage(row.turnTokens, usage),
             model: usage === null ? row.model : usage.model,
             customUsd: row.customUsd + delta,
             sessionUsd: row.customUsd + delta,
@@ -788,6 +803,7 @@ export const register: Register = on => {
             tps,
             isStreaming: false,
             tokens: usage === null ? row.tokens : withUsage(row.tokens, usage),
+            turnTokens: usage === null ? row.turnTokens : withUsage(row.turnTokens, usage),
             model: usage === null ? row.model : usage.model,
             sessionUsd: sessionUsd ?? row.sessionUsd,
             turnUsd,
@@ -992,6 +1008,20 @@ export const register: Register = on => {
       })
       void saveRates($, entry)
       pricing = withRates(filePricing, entry)
+      const active = pricing
+      const rowRates = active === null ? null : ratesFor(active, model)
+
+      if (active === null || rowRates === null) {
+        return
+      }
+
+      // The row reprices what it already counted, the way the new numbers ask.
+      await update($, reading, row => ({
+        ...row,
+        pricedBy: 'custom' as const,
+        sessionUsd: priceTokens(row.tokens, rowRates, active.multiplier),
+        turnUsd: priceTokens(row.turnTokens, rowRates, active.multiplier),
+      }))
     }
 
     // Every keystroke lands here, so a redraw from the streaming turn cannot

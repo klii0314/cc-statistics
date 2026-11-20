@@ -38,6 +38,11 @@ export type Reading = {
    * is typed, when the engine's ledger (or pricing.json) prices the costs.
    */
   rates: Rates | null
+  /**
+   * The unit the band shows costs in: `usd` or `cny`. It marks what the
+   * plugin priced itself; the engine's ledger is always US dollars.
+   */
+  currency: 'usd' | 'cny'
 }
 
 /** US dollars per million tokens, the four a response is billed at. */

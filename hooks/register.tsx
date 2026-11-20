@@ -24,13 +24,14 @@ const EMPTY: Reading = {
   fields: ALL_FIELDS,
   isMenuOpen: false,
   rates: null,
+  currency: 'usd',
 }
 
 // The band's one value: a write redraws the row the hook read it in.
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-6' },
+  { shape: 'reading-7' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -50,12 +51,12 @@ function rate(tps: number): string {
   return tps >= 100 ? tps.toFixed(0) : tps.toFixed(1)
 }
 
-function dollars(usd: number): string {
-  if (usd === 0) {
-    return '$0.00'
+function money(amount: number, symbol: string): string {
+  if (amount === 0) {
+    return `${symbol}0.00`
   }
 
-  return usd < 0.1 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(2)}`
+  return amount < 0.1 ? `${symbol}${amount.toFixed(4)}` : `${symbol}${amount.toFixed(2)}`
 }
 
 function count(n: number): string {
@@ -385,6 +386,27 @@ function sameRates(a: Rates | null, b: Rates | null): boolean {
     && a.cacheWrite === b.cacheWrite
 }
 
+// ---- the unit the costs are shown in --------------------------------------
+const CURRENCY_KEY = 'currency'
+
+async function savedCurrency($: EngineInterface): Promise<'usd' | 'cny' | null> {
+  try {
+    const raw = await $.store.get(CURRENCY_KEY)
+
+    return raw === 'usd' || raw === 'cny' ? raw : null
+  } catch {
+    return null
+  }
+}
+
+async function saveCurrency($: EngineInterface, currency: 'usd' | 'cny'): Promise<void> {
+  try {
+    await $.store.set(CURRENCY_KEY, currency)
+  } catch {
+    // A refused write leaves the other sessions as they were.
+  }
+}
+
 function withRates(pricing: Pricing | null, rates: Rates | null): Pricing | null {
   if (rates === null) {
     return pricing
@@ -439,6 +461,12 @@ export const register: Register = on => {
     const sharedRates = await savedRates($)
     await update($, reading, row => (sameRates(row.rates, sharedRates) ? row : { ...row, rates: sharedRates }))
 
+    const sharedCurrency = await savedCurrency($)
+
+    if (sharedCurrency !== null && (await read($, reading)).currency !== sharedCurrency) {
+      await update($, reading, row => ({ ...row, currency: sharedCurrency }))
+    }
+
     $.clock.every(FIELD_SYNC_MS, async () => {
       const saved = await savedFields($)
 
@@ -448,6 +476,12 @@ export const register: Register = on => {
 
       const rates = await savedRates($)
       await update($, reading, row => (sameRates(row.rates, rates) ? row : { ...row, rates }))
+
+      const currency = await savedCurrency($)
+
+      if (currency !== null) {
+        await update($, reading, row => (row.currency === currency ? row : { ...row, currency }))
+      }
     })
 
     // Ask behind the turn, not inside it: the answer lands in the row.
@@ -726,9 +760,12 @@ export const register: Register = on => {
     const moved = row.tokens.input + row.tokens.output
     const tokens = moved > 0 ? count(moved) : '—'
     const cache = percent(row.tokens.cached, row.tokens.input)
-    const mark = row.pricedBy === 'custom' ? '*' : ''
-    const turn = row.turnUsd !== null ? `${dollars(row.turnUsd)}${mark}` : '—'
-    const session = row.sessionUsd !== null ? `${dollars(row.sessionUsd)}${mark}` : '—'
+    const star = row.pricedBy === 'custom' ? '*' : ''
+    // The engine's ledger is US dollars; only the plugin's own numbers follow
+    // the chosen unit.
+    const symbol = row.pricedBy === 'custom' && row.currency === 'cny' ? '¥' : '$'
+    const turn = row.turnUsd !== null ? `${money(row.turnUsd, symbol)}${star}` : '—'
+    const session = row.sessionUsd !== null ? `${money(row.sessionUsd, symbol)}${star}` : '—'
 
     // The band's one action: pull the installed plugin's next version, then
     // say how it lands. A folder install reads its folder, so this is mostly
@@ -809,6 +846,11 @@ export const register: Register = on => {
       pricing = withRates(filePricing, rates)
     }
 
+    const setCurrency = async (value: 'usd' | 'cny'): Promise<void> => {
+      await update($, reading, row => ({ ...row, currency: value }))
+      void saveCurrency($, value)
+    }
+
     const rateText = (name: keyof Rates): string => {
       const value = row.rates?.[name]
 
@@ -826,7 +868,17 @@ export const register: Register = on => {
           <Button key="f-session" label={`${f.session ? '✓' : '·'} session`} onPress={() => toggleField('session')} />
         </Box>
         <Box gap="sm" paddingX={1}>
-          <Text dimColor>$ / 1M tokens</Text>
+          <Button
+            key="cur-usd"
+            label={`${row.currency === 'usd' ? '✓' : '·'} $`}
+            onPress={() => setCurrency('usd')}
+          />
+          <Button
+            key="cur-cny"
+            label={`${row.currency === 'cny' ? '✓' : '·'} ¥`}
+            onPress={() => setCurrency('cny')}
+          />
+          <Text dimColor>/ 1M tokens</Text>
           <Input
             key="rate-input"
             label="input "

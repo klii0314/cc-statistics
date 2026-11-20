@@ -34,10 +34,12 @@ export type Reading = {
   /** True while the menu of readings is open under the row. */
   isMenuOpen: boolean
   /**
-   * The rates set from the menu, US dollars per million tokens; null until one
-   * is typed, when the engine's ledger (or pricing.json) prices the costs.
+   * The rates set from the menu, by model id with a fallback row; null until
+   * one is typed, when the engine's ledger (or pricing.json) prices the costs.
    */
-  rates: Rates | null
+  rates: StoredPricing | null
+  /** The model the menu's rate fields bind to: the one that last answered. */
+  model: string | null
   /**
    * The unit the band shows costs in: `usd` or `cny`. It marks what the
    * plugin priced itself; the engine's ledger is always US dollars.
@@ -61,6 +63,12 @@ export type Rates = {
   output: number
   cacheRead: number
   cacheWrite: number
+}
+
+/** The rates the menu saved: a row per model, and one for any other model. */
+export type StoredPricing = {
+  models?: Record<string, Rates>
+  fallback?: Rates
 }
 
 /** Which readings the row shows; the menu on the left toggles them. */

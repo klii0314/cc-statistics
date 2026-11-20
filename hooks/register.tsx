@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, ModelUsage, Register } from 'claude-code'
 
-import type { Fields, Reading, Tokens } from '../types'
+import type { Fields, Reading, StoredPricing, Tokens } from '../types'
 import { ALL_FIELDS, readFields, sameFields } from './fields'
 import { costOf, hasRates, parsePricing, ratesFor, readRates } from './pricing'
 import type { Pricing, Rates } from './pricing'
@@ -24,6 +24,7 @@ const EMPTY: Reading = {
   fields: ALL_FIELDS,
   isMenuOpen: false,
   rates: null,
+  model: null,
   currency: 'usd',
   drafts: {},
 }
@@ -32,7 +33,7 @@ const EMPTY: Reading = {
 const reading = atom(
   { plugin: 'cc-statistics', key: 'reading' } as const,
   EMPTY,
-  { shape: 'reading-8' },
+  { shape: 'reading-9' },
 )
 
 // How often the row refreshes while a response streams (in chunks, so no
@@ -404,15 +405,58 @@ async function saveFields($: EngineInterface, fields: Fields): Promise<void> {
 // table: a model-specific row in pricing.json still wins.
 const RATES_KEY = 'rates'
 
-async function savedRates($: EngineInterface): Promise<Rates | null> {
+// What the menu saves: a row per model, plus one for any model it does not
+// name. An earlier version stored a single flat row, which reads as the
+// fallback.
+function readStoredPricing(raw: unknown): StoredPricing | null {
+  const flat = readRates(raw)
+
+  if (flat !== null) {
+    return { fallback: flat }
+  }
+
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null
+  }
+
+  const record = raw as { models?: unknown; fallback?: unknown }
+  const stored: StoredPricing = {}
+  const models = record.models
+
+  if (models !== null && typeof models === 'object' && !Array.isArray(models)) {
+    const rows: Record<string, Rates> = {}
+
+    for (const [model, row] of Object.entries(models)) {
+      const rates = readRates(row)
+
+      if (rates !== null) {
+        rows[model] = rates
+      }
+    }
+
+    if (Object.keys(rows).length > 0) {
+      stored.models = rows
+    }
+  }
+
+  const fallback = readRates(record.fallback)
+
+  if (fallback !== null) {
+    stored.fallback = fallback
+  }
+
+  return stored.models === undefined && stored.fallback === undefined ? null : stored
+}
+
+async function savedRates($: EngineInterface): Promise<StoredPricing | null> {
   try {
-    return readRates(await $.store.get(RATES_KEY))
+    return readStoredPricing(await $.store.get(RATES_KEY))
   } catch {
     return null
   }
 }
 
-async function saveRates($: EngineInterface, rates: Rates): Promise<void> {
+async function saveRates($: EngineInterface, rates: StoredPricing): Promise<void> {
   try {
     await $.store.set(RATES_KEY, rates)
   } catch {
@@ -420,8 +464,8 @@ async function saveRates($: EngineInterface, rates: Rates): Promise<void> {
   }
 }
 
-function sameRates(a: Rates | null, b: Rates | null): boolean {
-  if (a === null || b === null) {
+function sameRateRow(a: Rates | undefined, b: Rates | undefined): boolean {
+  if (a === undefined || b === undefined) {
     return a === b
   }
 
@@ -429,6 +473,28 @@ function sameRates(a: Rates | null, b: Rates | null): boolean {
     && a.output === b.output
     && a.cacheRead === b.cacheRead
     && a.cacheWrite === b.cacheWrite
+}
+
+function sameRates(a: StoredPricing | null, b: StoredPricing | null): boolean {
+  if (a === null || b === null) {
+    return a === b
+  }
+
+  if (!sameRateRow(a.fallback, b.fallback)) {
+    return false
+  }
+
+  const left = a.models ?? {}
+  const right = b.models ?? {}
+  const names = new Set([...Object.keys(left), ...Object.keys(right)])
+
+  for (const name of names) {
+    if (!sameRateRow(left[name], right[name])) {
+      return false
+    }
+  }
+
+  return true
 }
 
 // ---- the unit the costs are shown in --------------------------------------
@@ -452,14 +518,19 @@ async function saveCurrency($: EngineInterface, currency: 'usd' | 'cny'): Promis
   }
 }
 
-function withRates(pricing: Pricing | null, rates: Rates | null): Pricing | null {
-  if (rates === null) {
+function withRates(pricing: Pricing | null, stored: StoredPricing | null): Pricing | null {
+  if (stored === null) {
     return pricing
   }
 
-  return pricing === null
-    ? { multiplier: 1, models: {}, fallback: rates }
-    : { ...pricing, fallback: rates }
+  const models = { ...(pricing?.models ?? {}), ...(stored.models ?? {}) }
+  const fallback = stored.fallback ?? pricing?.fallback
+
+  if (fallback === undefined && Object.keys(models).length === 0) {
+    return pricing
+  }
+
+  return { multiplier: pricing?.multiplier ?? 1, models, fallback }
 }
 
 export const register: Register = on => {
@@ -499,6 +570,12 @@ export const register: Register = on => {
       sessionUsd: usage.cost?.usd ?? row.sessionUsd,
     }))
     // Follow the selection another session saved, then keep following it.
+    const sessionModel = await $.session.model().catch(() => null)
+
+    if (sessionModel !== null) {
+      await update($, reading, row => (row.model === sessionModel ? row : { ...row, model: sessionModel }))
+    }
+
     const shared = await savedFields($)
 
     if (shared !== null && !sameFields(shared, (await read($, reading)).fields)) {
@@ -689,6 +766,7 @@ export const register: Register = on => {
             tps,
             isStreaming: false,
             tokens: usage === null ? row.tokens : withUsage(row.tokens, usage),
+            model: usage === null ? row.model : usage.model,
             customUsd: row.customUsd + delta,
             sessionUsd: row.customUsd + delta,
             turnUsd: (row.turnUsd ?? 0) + delta,
@@ -710,6 +788,7 @@ export const register: Register = on => {
             tps,
             isStreaming: false,
             tokens: usage === null ? row.tokens : withUsage(row.tokens, usage),
+            model: usage === null ? row.model : usage.model,
             sessionUsd: sessionUsd ?? row.sessionUsd,
             turnUsd,
             pricedBy: (multiplier !== 1 ? 'custom' : 'ledger') as Reading['pricedBy'],
@@ -887,18 +966,32 @@ export const register: Register = on => {
         return
       }
 
-      const current = (await read($, reading)).rates ?? pricing?.fallback ?? ZERO_RATES
-      const rates: Rates = { ...current }
+      // The row binds to the model it is showing: the one that answered last,
+      // or the session's own before any answer.
+      const row0 = await read($, reading)
+      const model = row0.model ?? (await $.session.model().catch(() => ''))
+
+      if (model === '') {
+        $.ui.toast('还不知道当前模型，先发一条消息')
+
+        return
+      }
+
+      const stored: StoredPricing = { ...(row0.rates ?? {}) }
+      const models = { ...(stored.models ?? {}) }
+      const rates: Rates = { ...(models[model] ?? stored.fallback ?? pricing?.fallback ?? ZERO_RATES) }
       rates[name] = value
+      models[model] = rates
+      const entry: StoredPricing = { ...stored, models }
 
       await update($, reading, row => {
         const drafts = { ...row.drafts }
         delete drafts[name]
 
-        return { ...row, rates, drafts }
+        return { ...row, rates: entry, drafts }
       })
-      void saveRates($, rates)
-      pricing = withRates(filePricing, rates)
+      void saveRates($, entry)
+      pricing = withRates(filePricing, entry)
     }
 
     // Every keystroke lands here, so a redraw from the streaming turn cannot
@@ -912,9 +1005,12 @@ export const register: Register = on => {
       void saveCurrency($, value)
     }
 
-    // The field shows the rate in force: the one saved from the menu, else the
-    // pricing.json fallback the costs are being priced at.
-    const inForce = row.rates ?? pricing?.fallback ?? null
+    // The field shows the rate in force for this model: its own row, else the
+    // fallback the costs are being priced at.
+    const inForce = (row.model === null ? undefined : row.rates?.models?.[row.model])
+      ?? row.rates?.fallback
+      ?? pricing?.fallback
+      ?? null
     const rateText = (name: keyof Rates): string => {
       const draft = row.drafts[name]
 
@@ -948,31 +1044,37 @@ export const register: Register = on => {
             label={`${row.currency === 'cny' ? '✓' : '·'} ¥`}
             onPress={() => setCurrency('cny')}
           />
-          <Text dimColor>/ 1M tokens</Text>
+          <Text dimColor>
+            {`${row.model === null ? '—' : (row.model.length > 24 ? `${row.model.slice(0, 23)}…` : row.model)} · / 1M tokens`}
+          </Text>
+        </Box>
+        <Box gap="xs" paddingX={1}>
+          <Box width={12}><Text dimColor>input</Text></Box>
           <Input
             key="rate-input"
-            label="input "
             value={rateText('input')}
             onInput={value => setDraft('input', value)}
             onSubmit={value => submitRate('input', value)}
           />
+          <Box width={12}><Text dimColor>output</Text></Box>
           <Input
             key="rate-output"
-            label="output "
             value={rateText('output')}
             onInput={value => setDraft('output', value)}
             onSubmit={value => submitRate('output', value)}
           />
+        </Box>
+        <Box gap="xs" paddingX={1}>
+          <Box width={12}><Text dimColor>cacheRead</Text></Box>
           <Input
             key="rate-cacheRead"
-            label="cacheRead "
             value={rateText('cacheRead')}
             onInput={value => setDraft('cacheRead', value)}
             onSubmit={value => submitRate('cacheRead', value)}
           />
+          <Box width={12}><Text dimColor>cacheWrite</Text></Box>
           <Input
             key="rate-cacheWrite"
-            label="cacheWrite "
             value={rateText('cacheWrite')}
             onInput={value => setDraft('cacheWrite', value)}
             onSubmit={value => submitRate('cacheWrite', value)}

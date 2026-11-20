@@ -89,7 +89,7 @@ test('a narrow band moves the costs to a second line', async ($, on) => {
   await ui.unmount()
 })
 
-test('costs priced from the plugin rates carry a star', async ($, on) => {
+test('costs priced from the plugin rates show the symbol', async ($, on) => {
   on('state.get', () => ({
     value: {
       value: {
@@ -102,8 +102,8 @@ test('costs priced from the plugin rates carry a star', async ($, on) => {
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /\$0\.0042\*/ }))?.text).toBe('$0.0042*')
-  expect((await ui.find({ type: 'Text', text: /\$0\.0421\*/ }))?.text).toBe('$0.0421*')
+  expect((await ui.find({ type: 'Text', text: /\$0\.0042/ }))?.text).toBe('$0.0042')
+  expect((await ui.find({ type: 'Text', text: /\$0\.0421/ }))?.text).toBe('$0.0421')
   await ui.unmount()
 })
 
@@ -222,8 +222,8 @@ test('costs priced by the plugin follow the chosen currency', async ($, on) => {
 
   const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
 
-  expect((await ui.find({ type: 'Text', text: /¥0\.0042\*/ }))?.text).toBe('¥0.0042*')
-  expect((await ui.find({ type: 'Text', text: /¥0\.0421\*/ }))?.text).toBe('¥0.0421*')
+  expect((await ui.find({ type: 'Text', text: /¥0\.0042/ }))?.text).toBe('¥0.0042')
+  expect((await ui.find({ type: 'Text', text: /¥0\.0421/ }))?.text).toBe('¥0.0421')
   await ui.unmount()
 })
 

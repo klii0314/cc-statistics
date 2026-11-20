@@ -782,13 +782,12 @@ export const register: Register = on => {
     const moved = row.tokens.input + row.tokens.output
     const tokens = moved > 0 ? count(moved) : '—'
     const cache = percent(row.tokens.cached, row.tokens.input)
-    const star = row.pricedBy === 'custom' ? '*' : ''
     // The switch redraws the row at once: the symbol follows it, whichever
     // table priced the numbers. The engine's ledger is in dollars, so with no
     // custom rates the yuan mark sits on a dollar amount.
     const symbol = row.currency === 'cny' ? '¥' : '$'
-    const turn = row.turnUsd !== null ? `${money(row.turnUsd, symbol)}${star}` : '—'
-    const session = row.sessionUsd !== null ? `${money(row.sessionUsd, symbol)}${star}` : '—'
+    const turn = row.turnUsd !== null ? money(row.turnUsd, symbol) : '—'
+    const session = row.sessionUsd !== null ? money(row.sessionUsd, symbol) : '—'
 
     // The band's one action: pull the installed plugin's next version, then
     // say how it lands. A folder install reads its folder, so this is mostly

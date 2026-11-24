@@ -1,72 +1,85 @@
 # cc-statistics
 
-在输入框正上方的横栏（AbovePrompt band）里显示这一轮对话的推理指标：
+A band above the prompt that shows how the conversation is doing: time to first token, output speed, tokens moved, cache hit rate and cost.
 
 ```
 TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   session $0.0421
 ```
 
-## 显示内容
+**English** · [简体中文](README.zh-CN.md)
 
-| 项 | 含义 |
+## What it shows
+
+| Reading | Meaning |
 | --- | --- |
-| `TTFT` | 从请求发出到收到第一个 token 的时间（思考 token 也算）。等待中显示 `…`，还没跑过显示 `—`。 |
-| `TPS` | 输出速度，带单位 `token/s`。流式过程中是按字符数估算的实时值（每 32 个片段刷新一次），请求结束时用 API 报告的真实 `output_tokens` 校正。 |
-| `tokens` | 会话累计的 token 总数：每次请求的输入（未缓存 + 缓存写入 + 缓存命中）加输出，按 API 报告的用量累加。 |
-| `cache` | 缓存命中率：`cache_read_input_tokens ÷ 全部输入 token`，保留两位小数（如 `88.40%`）。会话累计口径。 |
-| `turn` | 本轮对话到目前为止的花费（本轮开始时的会话总额与当前总额之差）。 |
-| `session` | 整个会话到目前为止的花费，默认与 `/cost` 一致；配置了 `pricing.json` 后按自定义费率。 |
+| `TTFT` | From the request leaving to the first token (thinking tokens count). `…` while it waits, `—` before the first response. |
+| `TPS` | Output speed in `token/s`. Live while streaming (an estimate refreshed every 32 chunks), corrected at the end of the response with the API's `output_tokens`. |
+| `tokens` | Tokens the session has moved: prompt tokens (uncached + cache-written + cache-read) plus output, summed from each response's usage. Two decimals, `52.11M`. |
+| `cache` | Cache hit rate: `cache_read_input_tokens ÷ all prompt tokens`, two decimals. |
+| `turn` | What the current turn has cost so far. |
+| `session` | What the session has cost so far. |
 
-横栏最左侧的 `☰` 按钮是「显示项」菜单：点开后这一行下面出现六个开关
-（`✓ ttft` / `· tps` …），点哪个就切换哪一项是否显示，隐藏的项不占位。
-这个选择是全局的：在任一对话里改动后，其他会话会在几秒内（或下一轮开始时）同步。
+`TTFT` and `TPS` follow the main loop's latest request; `tokens` and `cache` include each subagent turn, and the costs are whole-session figures.
 
-费率行前面是币种开关：`✓ $` / `· ¥`。点一下 `turn`/`session` 的符号立即切换，费率
-输入的单位也随之改变（美元或人民币 / 百万 token）。注意引擎账本本身按美元计价：没有
-自定义费率时选 `¥` 只是把符号换掉，数值仍是引擎给出的美元金额；填了自定义费率后，
-数值才真正按 ¥ 费率计算。
+## The menu
 
-费率行接着是当前**模型名**和 `/ 1M tokens`，后面四个输入框 `input`、`output`、
-`cacheRead`、`cacheWrite`，填好按回车保存，单位是美元 / 百万 token。输入的内容会随按键
-即时保存在会话状态里，横栏因流式更新重绘时不会把你打了一半的数字冲掉——只有回车才真正
-写入费率。
+The `☰` button on the left opens a panel with four rows.
 
-按回车保存后，横栏会**立刻按累计的 token 用新费率重算** `turn` 和 `session`（单模型会话是
-精确的；会话里用过多个模型时，统一按当前模型这行费率估算；prompt 的缓存写入部分并入未缓存
-输入计价，因为插件只保留输入总数）。
+**Readings** — six switches (`✓ ttft`, `· tps`, …). A hidden reading draws nothing at all. The choice is global: every session reads it back within a few seconds of a change.
 
-**费率按模型绑定**：菜单里显示的是**最近一次回答的模型 id**（响应的 `usage.model`，随对话
-存档，重启后恢复；新对话在第一次回答前显示 `—`——配置里的模型别名不是服务商实际回答的模型，
-所以不用它）。保存的四个数字挂到这个模型下；计价时按每条响应的 `usage.model` 匹配——先精确
-同名，再按包含关系（如 `sonnet`），都不中才用 `pricing.json` 的 fallback。切换模型后
-打开菜单，看到的和修改的就是那个模型自己的价格。填了之后 `turn`/`session`
-改为按这些费率计算；`pricing.json` 里针对具体模型的费率仍然优先，
-这些值作为兜底。和开关一样，费率也存进 `$.store`、跨会话共享。
+**Currency and model** — `$` or `¥` sets the symbol on `turn` and `session` immediately, and the unit of the rate fields beside it. The name after them is the model that last answered; its rates are edited for that model.
 
-横栏行尾（数字之后）**只在有新版本时**出现 `update` 按钮，标签带版本号（如
-`update 0.5.3`）。插件在会话开始、每轮开始以及每隔约 5 分钟用
-`claude plugin list --json` 比对「已安装版本」与磁盘上的版本，两者不同才显示。
-点它执行 `claude plugin update cc-statistics`，结果以 toast 提示，再按提示
-`/reload-plugins` 生效；没有新版本时这一格是空白，不会占位。
+**Rates** — four fields (`input`, `output`, `cacheRead`, `cacheWrite`), in the chosen currency per million tokens. Type a value and press Enter to save it.
 
-两个花费用的是 `pricing.json` 里的自定义费率或倍率时，按你选的币种显示符号。详见下面的「计费」。
+- The fields show the rate in force, and keep a half-typed value through the redraws a streaming turn brings.
+- Saving reprices `turn` and `session` at once from the tokens already counted (exact for a one-model session; a session that used several models is estimated at the current model's rates; the cache-written part of a prompt is priced at the input rate, since only the total is kept).
+- A rate is bound to the model shown. Pricing matches each response's `usage.model`: the exact id first, then the longest key the id contains (`sonnet` in `claude-sonnet-5-5-20260101`), then the fallback row.
+- Rates, like the switches, live in the plugin's `$.store` and are shared across sessions.
 
-`TTFT`/`TPS` 只统计主对话循环的最新一次请求；`tokens`/`cache` 还把子代理
-（subagent）每一轮的用量计入，`turn`/`session` 与 `/cost` 一样是全量的。
+**Update** — at the row's right end, `update <version>` appears only when a newer version is installed or published. It runs `claude plugin update cc-statistics` and says how it went; press `/reload-plugins` afterwards.
 
-`tokens` 和 `cache` 由插件自己累加，所以从插件加载那一刻开始计数：在已经跑了
-很多轮之后才装上，之前那部分的 token 不会补进总数（花费不受影响，那是引擎的账本）。
-累计值同时写进插件的 `$.store`，键是**对话的首条用户消息**：同一对话被重启/恢复后
-（应用会换新的 session id、复制转录）会自动读回，新开的对话首条消息不同，从零开始；
-`/clear` 清零并删除保存值。`session` 花费始终来自引擎账本，随会话重置属正常。
-横栏窄于 88 列时，`turn`/`session` 会自动折到第二行。
+## Install
 
-## 计费（pricing.json）
+This repository is a marketplace: `.claude-plugin/marketplace.json` sits beside `plugin.json` and points at the repository root.
 
-默认 `turn`/`session` 读引擎的 `/cost` 账本：按模型官方价计算，缓存读/写和 1 小时缓存的差异都已处理。
-如果你的服务商不同（例如设置了 `ANTHROPIC_BASE_URL` 指向中转/代理），在插件**实际
-运行**的目录里新建 `pricing.json`——`claude plugin list --json` 的 `installPath`
-就是它；文件放进源仓库目录的话，按下面「修改与更新」走一遍让它进入副本。填费率：
+From GitHub (Claude Code 2.1.275 or later):
+
+```bash
+claude plugin install cc-statistics --marketplace klii0314/cc-statistics
+```
+
+In a terminal session you can also type `/plugin install cc-statistics --marketplace klii0314/cc-statistics`; in the desktop app use **+ → Plugins → Add marketplace** and enter `klii0314/cc-statistics`. Choose the user scope so later sessions load it too.
+
+Installing from your own fork: replace `klii0314/cc-statistics` with `<your-account>/cc-statistics`.
+
+A cloned folder works as a local marketplace (replace the path):
+
+```bash
+claude plugin marketplace add ./cc-statistics
+claude plugin install cc-statistics@cc-statistics --scope user
+```
+
+A machine holds one marketplace per name, so a pinned folder entry and the GitHub repository of the same name cannot both be configured; remove one before adding the other.
+
+## Updating
+
+A running session loads the copy made when the plugin was installed (`installPath` in `claude plugin list --json`), not the repository. After an edit:
+
+1. Bump `version` in `.claude-plugin/plugin.json`.
+2. Refresh the installed copy: `claude plugin update cc-statistics`, or the `update` button in the band.
+3. `/reload-plugins` (or restart the app).
+
+A change without a version bump reads as "already at the latest", so the copy is not refreshed and the reload keeps running the old code — the usual "my change did nothing".
+
+The `update` button decides in two ways: a folder install compares the folder's own version with the installed one; a GitHub install has no folder, so the plugin reads `known_marketplaces.json` for the repository and fetches its manifest at the tip. No button appears when the network or the source does not allow that.
+
+## Pricing
+
+**Default** — `turn` and `session` come from the engine's `/cost` ledger: the list price per model, cache reads and writes included. The ledger is US dollars, so selecting `¥` with no rates of your own only changes the symbol.
+
+**Rates from the menu** — the four fields described above: they take over for that model, and every figure is then computed from the tokens counted.
+
+**pricing.json** — for a provider that bills its own prices (a relay behind `ANTHROPIC_BASE_URL`, for example), put a file in the directory the plugin runs from (`installPath`):
 
 ```json
 {
@@ -78,61 +91,28 @@ TTFT 1.24s   TPS 52.3 token/s   tokens 1.54M   cache 88.40%   turn $0.0042   ses
 }
 ```
 
-- 单位：美元 / 百万 token。`input` 未缓存输入、`output` 输出（含思考）、`cacheRead` 缓存命中、`cacheWrite` 缓存写入（不区分 5 分钟/1 小时）。
-- 匹配顺序：模型 id 完全一致 → id 里包含的最长 key（如 `sonnet` 匹配 `claude-sonnet-…-20260101`）→ `fallback`。都不匹配的按 $0 记，并在日志里提示一次。
-- `multiplier` 乘在所有金额上。只写 `multiplier`、不写 `models`/`fallback` 时，按倍率折算引擎账本（`session` 仍包含安装前的历史）。
-- 按费率计算时，`session` 由插件自己累加，从插件开始观察会话时算起（正常是会话开始）。
-- 改的是运行目录里那份 `pricing.json`，下一轮开始就生效，不需要重载插件。
-- `pricing.example.json` 只是结构示例，里面的数字是占位的，请换成你服务商的报价。
+- Values are per million tokens; `cacheWrite` covers both cache lifetimes.
+- A model is matched by exact id, then by the longest key the id contains, then by `fallback`; an unmatched model is priced at zero, with one log line.
+- `multiplier` scales every figure. With only a multiplier, the engine's ledger is scaled instead.
+- The file is read at the start of every turn, so an edit lands on the next turn.
+- `pricing.example.json` is a shape to copy, not real prices.
 
-## 显示位置
+## Persistence and scope
 
-横栏由 Claude Code 画在消息输入框正上方，桌面端、终端和移动端都会显示。
-窗口最顶部没有插件可用的绘制位置；如果希望它浮在聊天区角落，可以把
-`ui.open` 的 pane 作为一个 widget 打开，但位置由客户端决定、由用户拖动。
+`tokens`, `cache` and the custom cost are the plugin's own counts: they begin when the plugin first sees a response, so earlier turns are not backfilled (cost is unaffected — that is the engine's ledger). They are mirrored into `$.store` under the conversation's first user message, so a restart, a resume or a worker respawn reads them back; a new conversation starts at zero, and `/clear` deletes the saved entry. The model shown in the menu is saved with them.
 
-## 安装
+`session` cost comes from the engine and resets with the session.
 
-这个仓库本身就是一个 marketplace：`.claude-plugin/marketplace.json` 与
-`plugin.json` 并列，`source` 指向仓库根目录。
+## Where it draws
 
-从 GitHub 安装（需要 Claude Code 2.1.275 或更新）：
+The band is drawn by Claude Code directly above the message box, on the desktop, terminal and mobile surfaces. There is no plugin slot at the very top of the window. Narrower than 88 columns, the two costs move to a second line.
+
+## Development
 
 ```bash
-claude plugin install cc-statistics --marketplace klii0314/cc-statistics
+claude plugin validate .
 ```
-
-终端会话里也可以直接输入 `/plugin install cc-statistics --marketplace klii0314/cc-statistics`；
-桌面应用的 Code 标签页走 **+ → Plugins → Add marketplace**，填 `klii0314/cc-statistics`。
-选 user 作用域后，之后再启动的每个会话都会加载。
-
-从自己的 fork 安装时，把上面的 `klii0314/cc-statistics` 换成 `<你的账号>/cc-statistics`。
-
-也可以把克隆下来的文件夹当作本地 marketplace 安装（`./cc-statistics` 换成实际克隆路径）：
 
 ```bash
-claude plugin marketplace add ./cc-statistics
-claude plugin install cc-statistics@cc-statistics --scope user
+claude plugin test .
 ```
-
-## 修改与更新
-
-运行中的会话加载的是**安装时的那份副本**（`claude plugin list --json` 的
-`installPath`），不是仓库目录。改完代码之后按这个顺序做，三步都不能省：
-
-1. 把 `.claude-plugin/plugin.json` 的 `version` 加一；
-2. 更新安装副本：`claude plugin update cc-statistics`，或者点横栏行尾出现的
-   `update <版本>` 按钮；
-3. `/reload-plugins`（或重启应用），让会话加载新副本。
-
-只改文件不 bump 版本的话，`claude plugin update` 会认为「已是最新」，副本不会
-更新，reload 也就仍跑旧代码——这是最常见的「改完没生效」。
-
-横栏上的 `update` 按钮对新版本的两条判断路径：文件夹安装比对 `folderVersion`；
-从 GitHub 安装的没有这个字段，插件会按 `known_marketplaces.json` 里记录的仓库去
-拉 `.claude-plugin/plugin.json` 比对版本（网络不通或不是 GitHub 源时不显示按钮）。
-
-## 开发
-
-- 校验：`claude plugin validate <文件夹>`
-- 测试：`claude plugin test <文件夹>`
